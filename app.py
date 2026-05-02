@@ -50,7 +50,7 @@ SIGNAL = {
     1: {"bg": "#DCFCE7", "fg": "#14532D", "main": "#16A34A", "label": "Яхши"},        # green
     2: {"bg": "#F0FDD4", "fg": "#365314", "main": "#84CC16", "label": "Ўртача"},      # yellow-green
     3: {"bg": "#FFEDD5", "fg": "#7C2D12", "main": "#EA580C", "label": "Хавфли"},      # orange
-    4: {"bg": "#FEE2E2", "fg": "#7F1D1D", "main": "#DC2626", "label": "Инқирозли"},   # red
+    4: {"bg": "#FEE2E2", "fg": "#7F1D1D", "main": "#DC2626", "label": "Жуда ёмон"},   # red
 }
 LEVEL = {
     4: {"label": "4-даража · Кризис",        "color": PALETTE["red"]},
@@ -753,7 +753,7 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         ), unsafe_allow_html=True)
     with c2:
         st.markdown(kpi_card(
-            "Инқирозли ҳудудлар", f"{kpi['critical_count']}", PALETTE["red"],
+            "Жуда ёмон ҳудудлар", f"{kpi['critical_count']}", PALETTE["red"],
             kpi["critical_names"] or "-",
         ), unsafe_allow_html=True)
     with c3:
@@ -834,7 +834,7 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
                         st.rerun()
 
         st.caption(
-            "🟩 ≥70 Яхши  ·  🟨 50-69 Ўртача  ·  🟧 30-49 Хавфли  ·  🟥 <30 Инқирозли"
+            "🟩 ≥70 Яхши  ·  🟨 50-69 Ўртача  ·  🟧 30-49 Хавфли  ·  🟥 <30 Жуда ёмон"
         )
 
         # Region quick-pick grid - 14 buttons under the map. Acts as a "click
@@ -1007,7 +1007,7 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
 - **Яхши** (≥ 70) - иқтисодий барқарорлик юқори, одатий мониторинг режимида кузатилади.
 - **Ўртача** (50-69) - диққатни талаб қилади, тенденциялар кузатиб борилиши лозим.
 - **Хавфли** (30-49) - огоҳлантириш даражаси, тегишли чоралар кўриш талаб этилади.
-- **Инқирозли** (< 30) - ўта ёмон ҳолат, шошилинч чора-тадбирлар кўриш зарур.
+- **Жуда ёмон** (< 30) - ўта ёмон ҳолат, шошилинч чора-тадбирлар кўриш зарур.
 
 **5. Эрта огоҳлантириш тизими**
 
