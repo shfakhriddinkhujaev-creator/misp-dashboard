@@ -1,5 +1,5 @@
 """
-ҲИБКК — Synthetic data generator for the Regional Economic Health Dashboard.
+ҲИБКК - Synthetic data generator for the Regional Economic Health Dashboard.
 
 Implements the composite index methodology from the project concept:
   - 14 regions × 7 analytical blocks
@@ -71,7 +71,15 @@ BLOCKS = [
 ]
 BLOCK_WEIGHTS = np.array([b[2] for b in BLOCKS])
 BLOCK_NAMES = [f"{b[0]}. {b[1]}" for b in BLOCKS]
-BLOCK_SHORT = [f"{b[0]}. {b[1].split()[0]}" for b in BLOCKS]
+BLOCK_SHORT = [
+    "I. Иқтисодий фаоллик",
+    "II. Меҳнат бозори",
+    "III. Тадбиркорлик",
+    "IV. Инсоний капитал",
+    "V. Инфратузилма",
+    "VI. Молиявий инклюзия",
+    "VII. Экологик барқарорлик",
+]
 
 # 12-month trend coefficients (signed slope per month, pts).
 TREND_COEF = {
@@ -106,7 +114,7 @@ DISTRICT_COUNTS = {
     "Қорақалп. Р.": 18,   # 16 + 2 (Нукус, Беруний)
 }
 
-# Indicators within each block — used to populate the region profile detail.
+# Indicators within each block - used to populate the region profile detail.
 INDICATORS = {
     "I":   ["Саноат ИЧИ", "Қ/х маҳсулоти", "Чакана айланма", "Қурилиш ҳажми", "Электр истеъмоли"],
     "II":  ["Расмий бандлик %", "Ишсизлик %", "Ўртача иш ҳақи", "Ёш ишсизлиги %", "Расмий бандлик улуши"],
@@ -119,7 +127,7 @@ INDICATORS = {
 
 
 def _signal_level(score: float) -> int:
-    """1 = monitoring (≥70), 2 = attention (50–69), 3 = warning (30–49), 4 = crisis (<30)."""
+    """1 = monitoring (≥70), 2 = attention (50-69), 3 = warning (30-49), 4 = crisis (<30)."""
     if score >= 70: return 1
     if score >= 50: return 2
     if score >= 30: return 3
@@ -127,10 +135,10 @@ def _signal_level(score: float) -> int:
 
 
 def _signal_label(level: int) -> str:
-    """Tier labels (Яхши/Ўрта/Хавф/Тангли) — same wording as the map legend
+    """Tier labels (Яхши/Ўрта/Хавф/Тангли) - same wording as the map legend
     in the original mockup. The EWS response levels (Мониторинг/Диққат/
     Огоҳлантириш/Кризис) live separately on the warnings panel."""
-    return {1: "Яхши", 2: "Ўрта", 3: "Хавф", 4: "Тангли"}[level]
+    return {1: "Яхши", 2: "Ўртача", 3: "Хавфли", 4: "Жуда ёмон"}[level]
 
 
 def _signal_color(level: int) -> str:
@@ -183,7 +191,7 @@ def generate_misp_data(seed: int = 42) -> dict:
             month_score = r["misp"] + offset + rng.normal(0, 0.6)
             month_score = float(np.clip(month_score, 0, 100))
             row = {"month": m, "name_uz": r["name_uz"], "misp": round(month_score, 1)}
-            # Block trends — same slope, smaller noise
+            # Block trends - same slope, smaller noise
             for j, b in enumerate(BLOCKS):
                 base_block = r[f"block_{b[0]}"]
                 row[f"block_{b[0]}"] = round(float(np.clip(base_block + offset + rng.normal(0, 0.8), 0, 100)), 1)
@@ -205,7 +213,7 @@ def generate_misp_data(seed: int = 42) -> dict:
             d_blocks = np.clip(d_misp + d_skew - np.mean(d_skew), 0, 100)
             row = {
                 "district_id": f"D{district_id:03d}",
-                "district_name": f"{r['name_uz']} — туман {k+1}",
+                "district_name": f"{r['name_uz']} - туман {k+1}",
                 "parent_region": r["name_uz"],
                 "parent_geo_match": r["geo_match"],
                 "misp": round(d_misp, 1),
