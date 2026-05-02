@@ -468,6 +468,22 @@ def make_plotly_choropleth(regions_df: pd.DataFrame, geojson: dict, height: int 
         ),
     )
 
+    # Tashkent City is too small to be visible on the country-level choropleth.
+    # Drop a labelled dot in its signal color so the user can see it clearly.
+    tash_row = df[df["name_uz"] == "Тошкент ш."]
+    if not tash_row.empty:
+        tash_signal = int(tash_row.iloc[0]["signal"])
+        fig.add_trace(go.Scattermap(
+            lat=[41.31], lon=[69.28],
+            mode="markers",
+            marker=dict(size=18, color=SIGNAL[tash_signal]["main"],
+                        opacity=0.95),
+            text=[f"Тошкент ш. · {tash_row.iloc[0]['misp']:.1f}"],
+            hovertemplate="<b>%{text}</b><extra></extra>",
+            showlegend=False,
+            name="tash_marker",
+        ))
+
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
         height=height,
@@ -870,11 +886,36 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         unsafe_allow_html=True,
     )
 
-    # ── KPI row ─────────────────────────────────────────────────────────────
+    # ── Static country-level facts ("Асосий рақамлар") ─────────────────────
+    st.markdown(
+        '<div class="panel-title">📊 Асосий рақамлар <span class="badge">статик маълумот · Ўзбекистон</span></div>',
+        unsafe_allow_html=True,
+    )
+    facts = [
+        ("36+ млн", "Умумий аҳоли (2024)"),
+        ("5.8%",    "ЯИМ ўсиши (2023)"),
+        ("3:1",     "Шаҳар/қишлоқ иш ҳақи тафовути"),
+        ("60%+",    "Инвестиция 2 минтақада тўпланган"),
+        ("40%+",    "Аҳоли қишлоқ хўжалигида"),
+        ("215+",    "Туман/шаҳар маъмурий бирликлар"),
+    ]
+    fcols = st.columns(6)
+    for fcol, (val, lbl) in zip(fcols, facts):
+        with fcol:
+            st.markdown(
+                f"""<div class="kpi-card" style="padding:10px 12px;text-align:left;height:100%">
+                      <div style="font-size:20px;font-weight:600;color:{PALETTE['navy']};line-height:1.1">{val}</div>
+                      <div style="font-size:10px;color:#475569;margin-top:4px;line-height:1.3">{lbl}</div>
+                    </div>""",
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+    # ── Quarterly KPI row ───────────────────────────────────────────────────
     delta_color = PALETTE["green"] if kpi["national_delta"] >= 0 else PALETTE["red"]
     delta_sign = "+" if kpi["national_delta"] >= 0 else ""
-    total_pop_mln = regions_df["population_k"].sum() / 1000  # to millions
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.markdown(kpi_card(
             "Миллий ҲИБКК индекси", f"{kpi['national_misp']}", PALETTE["navy"],
@@ -882,39 +923,22 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         ), unsafe_allow_html=True)
     with c2:
         st.markdown(kpi_card(
-            "Жами аҳоли", f"{total_pop_mln:.1f} млн", PALETTE["teal"],
-            "14 ҳудуд бўйича жами",
-        ), unsafe_allow_html=True)
-    with c3:
-        st.markdown(kpi_card(
             "Жуда ёмон ҳудудлар", f"{kpi['critical_count']}", PALETTE["red"],
             kpi["critical_names"] or "-",
         ), unsafe_allow_html=True)
-    with c4:
+    with c3:
         st.markdown(kpi_card(
             "Энг яхши ўсиш", kpi["best_growth_region"], PALETTE["green"],
             f"+{kpi['best_growth_delta']} пункт ({kpi['best_growth_from']}→{kpi['best_growth_to']})",
             PALETTE["green"],
         ), unsafe_allow_html=True)
-    with c5:
+    with c4:
         st.markdown(kpi_card(
-            "Фаол огоҳлантиришлар", f"{kpi['active_warnings']}", PALETTE["orange"],
+            "Огоҳлантириш", f"{kpi['active_warnings']}", PALETTE["orange"],
             f"{kpi['warn_lvl4']} та 4-даража · {kpi['warn_lvl3']} та 3-даража · {kpi['warn_lvl2']} та 2-даража",
         ), unsafe_allow_html=True)
 
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
-
-    # ── Population overview (compact, expandable) ──────────────────────────
-    with st.expander("👥 Минтақалар бўйича аҳоли", expanded=False):
-        pop_df = regions_df[["name_uz", "population_k"]].sort_values("population_k", ascending=False).copy()
-        pop_df["population_k"] = (pop_df["population_k"] / 1000).round(2)
-        pop_df.columns = ["Минтақа", "Аҳоли (млн)"]
-        st.dataframe(
-            pop_df, hide_index=True, width='stretch', height=400,
-            column_config={
-                "Аҳоли (млн)": st.column_config.NumberColumn("Аҳоли (млн)", format="%.2f"),
-            },
-        )
 
     # ── Map + warnings ──────────────────────────────────────────────────────
     map_col, warn_col = st.columns([2, 1])
@@ -986,7 +1010,7 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
 
     with warn_col:
         st.markdown(
-            '<div class="panel-title">Фаол огоҳлантиришлар '
+            '<div class="panel-title">Огоҳлантириш '
             f'<span class="badge" style="background:#FCEBEB;color:#791F1F">{len(warnings_df)} та</span></div>',
             unsafe_allow_html=True,
         )
@@ -1025,11 +1049,15 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
     table_df = regions_df[["rank", "name_uz", "misp", "delta_q", "signal_label",
                            "block_I", "block_II", "block_III", "block_IV",
                            "block_V", "block_VI", "block_VII", "population_k"]].copy()
-    table_df["population_k"] = (table_df["population_k"] / 1000).round(2)
+    # Format population as "X,Y млн" string (Uzbek decimal separator: comma)
+    table_df["population_k"] = table_df["population_k"].apply(
+        lambda kp: f"{kp/1000:.1f}".replace(".", ",") + " млн"
+    )
+    POP_HDR = "VIII. Аҳоли сони"
     table_df.columns = ["#", "Ҳудуд", "ҲИБКК", "Δ чорак", "Сигнал",
                          SHORT_BLOCK_HDR["I"], SHORT_BLOCK_HDR["II"], SHORT_BLOCK_HDR["III"],
                          SHORT_BLOCK_HDR["IV"], SHORT_BLOCK_HDR["V"], SHORT_BLOCK_HDR["VI"],
-                         SHORT_BLOCK_HDR["VII"], "Аҳоли (млн)"]
+                         SHORT_BLOCK_HDR["VII"], POP_HDR]
     block_help = {SHORT_BLOCK_HDR[k]: f"{k}. {b[1]} (тарози: {b[2]*100:.0f}%)"
                   for k, b in zip(SHORT_BLOCK_HDR.keys(), BLOCKS)}
 
@@ -1067,13 +1095,13 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         .map(_signal_bg, subset=score_cols)
         .map(_signal_label_bg, subset=["Сигнал"])
         .map(_delta_bg, subset=["Δ чорак"])
-        .format({"ҲИБКК": "{:.1f}", "Δ чорак": "{:+.2f}", "Аҳоли (млн)": "{:.2f}",
+        .format({"ҲИБКК": "{:.1f}", "Δ чорак": "{:+.2f}",
                  **{SHORT_BLOCK_HDR[k]: "{:.0f}" for k in ["I","II","III","IV","V","VI","VII"]}})
     )
     column_cfg = {
         "ҲИБКК":  st.column_config.NumberColumn("ҲИБКК",  help="Композит ҲИБКК балл (0-100)"),
         "Δ чорак": st.column_config.NumberColumn("Δ чорак", help="Олдинги чоракка нисбатан ўзгариш"),
-        "Аҳоли (млн)": st.column_config.NumberColumn("Аҳоли (млн)", help="Ҳудуд аҳолиси (миллион киши)"),
+        POP_HDR:   st.column_config.TextColumn(POP_HDR,    help="Ҳудуд аҳолиси (миллион киши)"),
     }
     for k in ["I","II","III","IV","V","VI","VII"]:
         column_cfg[SHORT_BLOCK_HDR[k]] = st.column_config.NumberColumn(
@@ -1098,14 +1126,14 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         st.plotly_chart(make_trend_lines(panel_df, regions_df), width='stretch')
     with b_col:
         st.markdown(
-            '<div class="panel-title">Блоклар бўйича миллий ўртача <span class="badge">аҳолига тенгламали</span></div>',
+            '<div class="panel-title">Блоклар бўйича миллий ўртача</div>',
             unsafe_allow_html=True,
         )
         st.plotly_chart(make_block_bars(regions_df), width='stretch')
 
     # ── National monthly trend (composite + 7 block sub-trends) ─────────────
     st.markdown(
-        '<div class="panel-title">Миллий ойлик тенденция '
+        '<div class="panel-title">Республика бўйича ойлик кўрсаткичлар '
         '<span class="badge">12 ой · аҳолига тенгламали · ҲИБКК + 7 блок</span></div>',
         unsafe_allow_html=True,
     )
