@@ -48,7 +48,7 @@ PALETTE = {
 }
 SIGNAL = {
     1: {"bg": "#DCFCE7", "fg": "#14532D", "main": "#16A34A", "label": "Яхши"},        # green
-    2: {"bg": "#F0FDD4", "fg": "#365314", "main": "#84CC16", "label": "Ўртача"},      # yellow-green
+    2: {"bg": "#ECFCCB", "fg": "#365314", "main": "#A3E635", "label": "Ўртача"},      # yellow-green
     3: {"bg": "#FFEDD5", "fg": "#7C2D12", "main": "#EA580C", "label": "Хавфли"},      # orange
     4: {"bg": "#FEE2E2", "fg": "#7F1D1D", "main": "#DC2626", "label": "Жуда ёмон"},   # red
 }
@@ -954,7 +954,7 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         # reliable in this stack. Sorted by rank so users see the leaderboard.
         st.markdown(
             '<div class="panel-title">📊 Ҳудудлар кесимида '
-            '<span class="badge">ҳудуд устига босинг → тўлиқ профил очилади</span></div>',
+            '<span class="badge">пастдаги ҳудуд карточкасини босинг → тўлиқ профил очилади</span></div>',
             unsafe_allow_html=True,
         )
         SIG_EMOJI = {1: "🟢", 2: "🟡", 3: "🟠", 4: "🔴"}
@@ -1279,15 +1279,33 @@ def render_region_profile(region_name: str, d: dict):
         d_block_help = {D_HDR[k]: f"{k}. {b[1]} (тарози: {b[2]*100:.0f}%)"
                         for k, b in zip(D_HDR.keys(), BLOCKS)}
         d_cfg = {
-            "ҲИБКК": st.column_config.ProgressColumn("ҲИБКК", min_value=0, max_value=100, format="%.1f"),
             "Аҳоли (минг)": st.column_config.NumberColumn("Аҳоли (минг)", format="%.1f"),
+            "ҲИБКК":        st.column_config.NumberColumn("ҲИБКК",        help="Композит ҲИБКК балл (0-100)"),
         }
         for k in ["I","II","III","IV","V","VI","VII"]:
             d_cfg[D_HDR[k]] = st.column_config.NumberColumn(
-                D_HDR[k], format="%.0f", help=d_block_help[D_HDR[k]], width="small",
+                D_HDR[k], help=d_block_help[D_HDR[k]], width="small",
             )
+
+        # Color cells by signal tier - same scheme as the main ranking table
+        def _d_signal_bg(val):
+            if pd.isna(val):
+                return ""
+            if val >= 70:   lvl = 1
+            elif val >= 50: lvl = 2
+            elif val >= 30: lvl = 3
+            else:           lvl = 4
+            return f"background-color: {SIGNAL[lvl]['bg']}; color: {SIGNAL[lvl]['fg']}; font-weight: 600;"
+
+        d_score_cols = ["ҲИБКК"] + [D_HDR[k] for k in ["I","II","III","IV","V","VI","VII"]]
+        d_styled = (
+            district_table.style
+            .map(_d_signal_bg, subset=d_score_cols)
+            .format({"ҲИБКК": "{:.1f}", "Аҳоли (минг)": "{:.1f}",
+                     **{D_HDR[k]: "{:.0f}" for k in ["I","II","III","IV","V","VI","VII"]}})
+        )
         st.dataframe(
-            district_table, hide_index=True, width='stretch', height=380,
+            d_styled, hide_index=True, width='stretch', height=380,
             column_config=d_cfg,
         )
 
