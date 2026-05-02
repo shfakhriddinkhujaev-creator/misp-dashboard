@@ -903,7 +903,8 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         # the region" affordance, since native click-on-choropleth wasn't
         # reliable in this stack. Sorted by rank so users see the leaderboard.
         st.markdown(
-            '<div class="panel-title">⚡ Тез drill-down <span class="badge">14 вилоят · картачадан босинг</span></div>',
+            '<div class="panel-title">📊 Ҳудудни танлаб батафсил кўринг '
+            '<span class="badge">ҳудуд устига босинг → тўлиқ профил очилади</span></div>',
             unsafe_allow_html=True,
         )
         SIG_EMOJI = {1: "🔵", 2: "🟢", 3: "🟠", 4: "🔴"}
