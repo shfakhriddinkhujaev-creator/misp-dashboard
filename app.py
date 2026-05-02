@@ -752,6 +752,56 @@ def make_national_trend_chart(panel_df: pd.DataFrame, regions_df: pd.DataFrame, 
     return fig
 
 
+def make_region_blocks_trend(panel_sub: pd.DataFrame, region_name: str, height: int = 380):
+    """Region-specific monthly trend: composite ҲИБКК as the headline thick
+    line plus 7 block sub-trends (toggle-able via the legend). Same shape as
+    make_national_trend_chart but for a single region's panel slice."""
+    fig = go.Figure()
+
+    # Threshold zones
+    fig.add_hrect(y0=0,  y1=30, fillcolor=SIGNAL[4]["bg"], opacity=0.35, line_width=0)
+    fig.add_hrect(y0=30, y1=50, fillcolor=SIGNAL[3]["bg"], opacity=0.35, line_width=0)
+    fig.add_hrect(y0=50, y1=70, fillcolor=SIGNAL[2]["bg"], opacity=0.35, line_width=0)
+    fig.add_hrect(y0=70, y1=100, fillcolor=SIGNAL[1]["bg"], opacity=0.35, line_width=0)
+
+    # 7 block lines (hidden by default)
+    for b in BLOCKS:
+        col = f"block_{b[0]}"
+        fig.add_trace(go.Scatter(
+            x=panel_sub["month"], y=panel_sub[col],
+            mode="lines", name=f"{b[0]}. {b[1]}",
+            line=dict(color=b[3], width=1.6, dash="dot"),
+            visible="legendonly",
+            hovertemplate=f"<b>{b[0]}. {b[1]}</b>: %{{y:.1f}}<extra></extra>",
+        ))
+
+    # Region composite line - thick
+    fig.add_trace(go.Scatter(
+        x=panel_sub["month"], y=panel_sub["misp"],
+        mode="lines+markers", name=f"{region_name} ҲИБКК",
+        line=dict(color=PALETTE["navy"], width=3.5),
+        marker=dict(size=7, color=PALETTE["navy"]),
+        hovertemplate=f"<b>{region_name} ҲИБКК</b>: %{{y:.1f}}<extra></extra>",
+    ))
+
+    fig.update_layout(
+        height=height,
+        margin=dict(l=10, r=10, t=20, b=10),
+        legend=dict(
+            orientation="v", yanchor="top", y=1.0, xanchor="left", x=1.02,
+            bgcolor="rgba(255,255,255,0.85)", bordercolor="#e2e8f0", borderwidth=1,
+            font=dict(size=10),
+            title=dict(text="Линияларни босиб ёқинг/ўчиринг", font=dict(size=10)),
+        ),
+        xaxis=dict(title=None, gridcolor="rgba(0,0,0,0.05)"),
+        yaxis=dict(title=dict(text="ҲИБКК", font=dict(size=10)),
+                   range=[0, 100], gridcolor="rgba(0,0,0,0.05)"),
+        hovermode="x unified",
+        plot_bgcolor="white",
+    )
+    return fig
+
+
 def make_region_trend(panel_sub: pd.DataFrame, region_name: str):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -903,11 +953,11 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         # the region" affordance, since native click-on-choropleth wasn't
         # reliable in this stack. Sorted by rank so users see the leaderboard.
         st.markdown(
-            '<div class="panel-title">📊 Ҳудудни танлаб батафсил кўринг '
+            '<div class="panel-title">📊 Ҳудудлар кесимида '
             '<span class="badge">ҳудуд устига босинг → тўлиқ профил очилади</span></div>',
             unsafe_allow_html=True,
         )
-        SIG_EMOJI = {1: "🔵", 2: "🟢", 3: "🟠", 4: "🔴"}
+        SIG_EMOJI = {1: "🟢", 2: "🟡", 3: "🟠", 4: "🔴"}
         sorted_for_grid = regions_df.sort_values("rank").reset_index(drop=True)
         grid_top = st.columns(7)
         grid_bot = st.columns(7)
@@ -1186,6 +1236,21 @@ def render_region_profile(region_name: str, d: dict):
             st.plotly_chart(highlight_fig, width='stretch', key=f"hl_{region_name}")
         except Exception:
             pass
+
+    # ── Region-specific monthly trend (composite + 7 block sub-trends) ──────
+    st.markdown(
+        f'<div class="panel-title">📈 {region_name} ойлик тенденцияси '
+        '<span class="badge">12 ой · ҲИБКК + 7 блок</span></div>',
+        unsafe_allow_html=True,
+    )
+    st.plotly_chart(
+        make_region_blocks_trend(panel_sub, region_name, height=400),
+        width='stretch', key=f"region_blocks_{region_name}",
+    )
+    st.caption(
+        "💡 Қалин кўк чизиқ - ушбу ҳудуднинг композит ҲИБКК тенденцияси. "
+        "Ўнгдаги легендадан 7 блокдан исталганини ёқиш/ўчириш мумкин."
+    )
 
     # ── District-level drill-down ──────────────────────────────────────────
     st.markdown(
