@@ -457,34 +457,6 @@ def make_plotly_choropleth(regions_df: pd.DataFrame, geojson: dict, height: int 
         ),
     )
 
-    # Overlay scatter markers on each region centroid so geographically tiny
-    # regions (Tashkent City especially) are still visible on the map.
-    fid_to_geom = {f["id"]: f["geometry"] for f in geojson_clean["features"]}
-    cent_lon, cent_lat, cent_text, cent_color = [], [], [], []
-    for _, row in df.iterrows():
-        geom = fid_to_geom.get(row["geo_id"])
-        if not geom:
-            continue
-        pts = []
-        for poly in geom["coordinates"]:
-            if poly and poly[0]:
-                pts.extend(poly[0])
-        if not pts:
-            continue
-        cent_lon.append(sum(p[0] for p in pts) / len(pts))
-        cent_lat.append(sum(p[1] for p in pts) / len(pts))
-        cent_text.append(f"{row['name_uz']} · {row['misp']:.1f}")
-        cent_color.append(SIGNAL[int(row["signal"])]["main"])
-    fig.add_trace(go.Scattermap(
-        lat=cent_lat, lon=cent_lon,
-        mode="markers",
-        marker=dict(size=11, color=cent_color, opacity=0.95),
-        text=cent_text,
-        hovertemplate="<b>%{text}</b><extra></extra>",
-        showlegend=False,
-        name="centroids",
-    ))
-
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
         height=height,
@@ -519,19 +491,9 @@ def make_region_highlight_map(regions_df: pd.DataFrame, geojson: dict,
         lambda n: "selected" if n == selected_region else "other"
     )
 
-    # Tashkent City is geographically tiny (~335 km², single dot at this scale)
-    # so we zoom in / re-center when it's the selected region. Same trick for
-    # other compact regions if they slip through.
-    SMALL_REGIONS = {
-        "Тошкент ш.": {"lat": 41.31, "lon": 69.28, "zoom": 8.5},
-        "Сирдарё":    {"lat": 40.50, "lon": 68.75, "zoom": 7.0},
-        "Хоразм":     {"lat": 41.55, "lon": 60.62, "zoom": 7.2},
-    }
-    cam = SMALL_REGIONS.get(selected_region,
-                             {"lat": 41.7, "lon": 64.5, "zoom": 4.6})
-
     # MapLibre choropleth_map - same renderer as the main map for visual
-    # consistency, and it rendered cleanly when we tested it earlier.
+    # consistency. Standard zoom for all regions; tiny ones (Tashkent City)
+    # are made visible via a centroid marker overlay rather than zooming.
     fig = px.choropleth_map(
         df,
         geojson=geojson_clean,
@@ -539,16 +501,17 @@ def make_region_highlight_map(regions_df: pd.DataFrame, geojson: dict,
         featureidkey="id",
         color="highlight",
         color_discrete_map={"selected": sel_color, "other": "#cbd5e1"},
+        category_orders={"highlight": ["other", "selected"]},
         hover_name="name_uz",
         custom_data=["name_uz", "misp", "rank", "signal_label"],
-        center={"lat": cam["lat"], "lon": cam["lon"]},
-        zoom=cam["zoom"],
+        center={"lat": 41.7, "lon": 64.5},
+        zoom=4.6,
         map_style="white-bg",
-        opacity=0.85,
+        opacity=1.0,
     )
     fig.update_traces(
         marker_line_color="#ffffff",
-        marker_line_width=1.2,
+        marker_line_width=1.0,
         hovertemplate=(
             "<b>%{customdata[0]}</b><br>"
             "ҲИБКК балл: %{customdata[1]:.1f}<br>"
@@ -557,6 +520,30 @@ def make_region_highlight_map(regions_df: pd.DataFrame, geojson: dict,
         ),
         showlegend=False,
     )
+
+    # Centroid marker on the selected region — guarantees visibility even
+    # when the region is geographically tiny (Tashkent City etc.).
+    fid_to_geom = {f["id"]: f["geometry"] for f in geojson_clean["features"]}
+    sel_geo_id = sel_row.iloc[0]["geo_id"] if len(sel_row) else None
+    geom = fid_to_geom.get(sel_geo_id) if sel_geo_id else None
+    if geom:
+        pts = []
+        for poly in geom["coordinates"]:
+            if poly and poly[0]:
+                pts.extend(poly[0])
+        if pts:
+            c_lon = sum(p[0] for p in pts) / len(pts)
+            c_lat = sum(p[1] for p in pts) / len(pts)
+            fig.add_trace(go.Scattermap(
+                lat=[c_lat], lon=[c_lon],
+                mode="markers",
+                marker=dict(size=22, color=sel_color,
+                            opacity=0.95),
+                text=[selected_region],
+                hovertemplate="<b>%{text}</b><extra></extra>",
+                showlegend=False,
+                name="selected_marker",
+            ))
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
         height=height,
@@ -899,12 +886,24 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         f'<div class="panel-title">Ҳудудлар кўрсаткичлари <span class="badge">{st.session_state.get("filter_quarter","III чорак")} {st.session_state.get("filter_year","2025")}</span></div>',
         unsafe_allow_html=True,
     )
+    SHORT_BLOCK_HDR = {
+        "I":   "I. Иқт.",
+        "II":  "II. Меҳ.",
+        "III": "III. Тдб.",
+        "IV":  "IV. Инс.",
+        "V":   "V. Инф.",
+        "VI":  "VI. Мол.",
+        "VII": "VII. Эко.",
+    }
     table_df = regions_df[["rank", "name_uz", "misp", "delta_q", "signal_label",
                            "block_I", "block_II", "block_III", "block_IV",
                            "block_V", "block_VI", "block_VII"]].copy()
     table_df.columns = ["#", "Ҳудуд", "ҲИБКК", "Δ чорак", "Сигнал",
-                         "I", "II", "III", "IV", "V", "VI", "VII"]
-    block_help = {b[0]: f"{b[0]}. {b[1]} (тарози: {b[2]*100:.0f}%)" for b in BLOCKS}
+                         SHORT_BLOCK_HDR["I"], SHORT_BLOCK_HDR["II"], SHORT_BLOCK_HDR["III"],
+                         SHORT_BLOCK_HDR["IV"], SHORT_BLOCK_HDR["V"], SHORT_BLOCK_HDR["VI"],
+                         SHORT_BLOCK_HDR["VII"]]
+    block_help = {SHORT_BLOCK_HDR[k]: f"{k}. {b[1]} (тарози: {b[2]*100:.0f}%)"
+                  for k, b in zip(SHORT_BLOCK_HDR.keys(), BLOCKS)}
 
     # Color cells by signal tier. Streamlit's ProgressColumn only supports a
     # single theme color, so we use a Pandas Styler with per-cell background
@@ -924,7 +923,7 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
                 return f"background-color: {SIGNAL[k]['bg']}; color: {SIGNAL[k]['fg']}; font-weight: 600;"
         return ""
 
-    score_cols = ["ҲИБКК", "I", "II", "III", "IV", "V", "VI", "VII"]
+    score_cols = ["ҲИБКК"] + [SHORT_BLOCK_HDR[k] for k in ["I","II","III","IV","V","VI","VII"]]
 
     def _delta_bg(val):
         if pd.isna(val):
@@ -941,21 +940,19 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         .map(_signal_label_bg, subset=["Сигнал"])
         .map(_delta_bg, subset=["Δ чорак"])
         .format({"ҲИБКК": "{:.1f}", "Δ чорак": "{:+.2f}",
-                 **{c: "{:.0f}" for c in ["I","II","III","IV","V","VI","VII"]}})
+                 **{SHORT_BLOCK_HDR[k]: "{:.0f}" for k in ["I","II","III","IV","V","VI","VII"]}})
     )
+    column_cfg = {
+        "ҲИБКК":  st.column_config.NumberColumn("ҲИБКК",  help="Композит ҲИБКК балл (0-100)"),
+        "Δ чорак": st.column_config.NumberColumn("Δ чорак", help="Олдинги чоракка нисбатан ўзгариш"),
+    }
+    for k in ["I","II","III","IV","V","VI","VII"]:
+        column_cfg[SHORT_BLOCK_HDR[k]] = st.column_config.NumberColumn(
+            SHORT_BLOCK_HDR[k], help=block_help[SHORT_BLOCK_HDR[k]],
+        )
     st.dataframe(
         styled, hide_index=True, width='stretch', height=400,
-        column_config={
-            "ҲИБКК":  st.column_config.NumberColumn("ҲИБКК",  help="Композит ҲИБКК балл (0-100)"),
-            "Δ чорак": st.column_config.NumberColumn("Δ чорак", help="Олдинги чоракка нисбатан ўзгариш"),
-            "I":   st.column_config.NumberColumn("I",   help=block_help["I"]),
-            "II":  st.column_config.NumberColumn("II",  help=block_help["II"]),
-            "III": st.column_config.NumberColumn("III", help=block_help["III"]),
-            "IV":  st.column_config.NumberColumn("IV",  help=block_help["IV"]),
-            "V":   st.column_config.NumberColumn("V",   help=block_help["V"]),
-            "VI":  st.column_config.NumberColumn("VI",  help=block_help["VI"]),
-            "VII": st.column_config.NumberColumn("VII", help=block_help["VII"]),
-        },
+        column_config=column_cfg,
     )
     st.caption(
         "💡 I. Иқтисодий фаоллик · II. Меҳнат бозори · III. Тадбиркорлик ва инвестиция · "
@@ -981,14 +978,32 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
     with st.expander("📘 Методология"):
         st.markdown(
             f"""
-            **Композит индекс ҲИБКК** - концепция презентациясига асосланган.
+**Ҳудудий иқтисодий барқарорлик композит кўрсаткичи (ҲИБКК)** — Ўзбекистон Республикасининг 14 та маъмурий-ҳудудлари иқтисодий аҳволини баҳолашга мўлжалланган ягона рақамли кўрсаткич. У 0 дан 100 гача шкалада тузилади ва қанчалик баланд бўлса, ҳудуднинг иқтисодий барқарорлиги шунчалик мустаҳкамдир.
 
-            - **Нормализация**: блок-кўрсаткичлари [0-100] шкаласига Min-Max усулда келтирилади (манфий йўналишли кўрсаткичлар инверсия қилинади).
-            - **Тарозийлар**: Delphi экспертлар + PCA асосида: I={BLOCK_WEIGHTS[0]:.0%}, II={BLOCK_WEIGHTS[1]:.0%}, III={BLOCK_WEIGHTS[2]:.0%}, IV={BLOCK_WEIGHTS[3]:.0%}, V={BLOCK_WEIGHTS[4]:.0%}, VI={BLOCK_WEIGHTS[5]:.0%}, VII={BLOCK_WEIGHTS[6]:.0%}.
-            - **Ялпи ҲИБКК = ∑(блок_балли × тарозий)**, [0-100].
-            - **Сигнал даражалари**: ≥70 Мониторинг · 50-69 Диққат · 30-49 Огоҳлантириш · <30 Кризис.
-            - **Эрта огоҳлантириш тизими**: 8 прокси кўрсаткич (электр, корхоналар нисбати, бандлик, кредит, миграция, буджет, инфляция, НПЛ) орқали 4 даражали реакция.
-            - **Маълумот**: бу прототипда синтетик, методологияга мос. Ишлаб чиқаришда - ЎзСТАТ + Марказий банк + МДА реестрлари.
+**1. Кўрсаткичларни тенглаштириш.** Ҳар бир блок таркибидаги хом кўрсаткичлар Min-Max усулида [0; 100] оралиғига келтирилади. Ижобий йўналишли кўрсаткичлар (қанча кўп — шунча яхши) тўғридан-тўғри, манфий йўналишлилар эса (қанча кам — шунча яхши, мас. ишсизлик, инфляция) тескарисига нормаллаштирилади.
+
+**2. Блокларнинг улуши (тарозийлар).** Делфи усулида соҳа экспертлари фикри ва бош компонент таҳлили (PCA) ёрдамида қуйидаги тарозийлар белгиланган:
+
+- I. Иқтисодий фаоллик — **{BLOCK_WEIGHTS[0]:.0%}**
+- II. Меҳнат бозори — **{BLOCK_WEIGHTS[1]:.0%}**
+- III. Тадбиркорлик ва инвестиция — **{BLOCK_WEIGHTS[2]:.0%}**
+- IV. Инсоний капитал — **{BLOCK_WEIGHTS[3]:.0%}**
+- V. Инфратузилма — **{BLOCK_WEIGHTS[4]:.0%}**
+- VI. Молиявий инклюзия — **{BLOCK_WEIGHTS[5]:.0%}**
+- VII. Экологик барқарорлик — **{BLOCK_WEIGHTS[6]:.0%}**
+
+**3. Ялпи балл.** Композит ҲИБКК — ҳар бир блок баллининг ўз тарозийсига кўпайтирилиши натижасида олинган йиғиндисидир: ҲИБКК = Σ (блок балли × тарозий).
+
+**4. Сигнал даражалари:**
+
+- **Яхши** (≥ 70) — иқтисодий барқарорлик юқори, мониторинг режимида.
+- **Ўртача** (50-69) — диққатни талаб қилади, тенденциялар кузатилиб борилиши керак.
+- **Хавфли** (30-49) — огоҳлантириш даражаси, аралашув талаб этилади.
+- **Жуда ёмон** (< 30) — кризис ҳолат, шошилинч чора-тадбирлар зарур.
+
+**5. Эрта огоҳлантириш тизими.** 8 та прокси кўрсаткич (электр энергия истеъмоли, корхоналар нисбати, расмий бандлик, кредит ҳажми, миграция баланси, бюджет камомади, инфляция, нохуш кредитлар улуши) асосида ҳар бир ҳудуд учун 4 даражали реакция тизими ишлаб чиқилган: 1-даража мониторинг, 2-даража диққат, 3-даража огоҳлантириш ва 4-даража кризис.
+
+**Маълумот манбалари.** Ушбу прототипда намойиш мақсадида синтетик маълумотлар қўлланилган. Реал ишлаб чиқариш муҳитида қуйидаги манбалардан фойдаланиш режалаштирилмоқда: Ўзбекистон Республикаси Давлат статистика қўмитаси (ЎзСТАТ), Ўзбекистон Республикаси Марказий банки, маъмурий давлат агентликларининг очиқ реестрлари.
             """
         )
 
@@ -1091,24 +1106,29 @@ def render_region_profile(region_name: str, d: dict):
     with d_col:
         st.plotly_chart(make_district_choropleth(districts_sub, region_name), width='stretch')
     with t_col:
+        D_HDR = {
+            "I": "I. Иқт.", "II": "II. Меҳ.", "III": "III. Тдб.", "IV": "IV. Инс.",
+            "V": "V. Инф.", "VI": "VI. Мол.", "VII": "VII. Эко.",
+        }
         district_table = districts_sub[["district_name", "misp", "block_I", "block_II",
                                          "block_III", "block_IV", "block_V", "block_VI",
                                          "block_VII", "population_k"]].copy()
-        district_table.columns = ["Туман", "ҲИБКК", "I", "II", "III", "IV", "V", "VI", "VII", "Аҳоли (минг)"]
-        d_block_help = {b[0]: f"{b[0]}. {b[1]} (тарози: {b[2]*100:.0f}%)" for b in BLOCKS}
+        district_table.columns = ["Туман", "ҲИБКК",
+                                   D_HDR["I"], D_HDR["II"], D_HDR["III"], D_HDR["IV"],
+                                   D_HDR["V"], D_HDR["VI"], D_HDR["VII"], "Аҳоли (минг)"]
+        d_block_help = {D_HDR[k]: f"{k}. {b[1]} (тарози: {b[2]*100:.0f}%)"
+                        for k, b in zip(D_HDR.keys(), BLOCKS)}
+        d_cfg = {
+            "ҲИБКК": st.column_config.ProgressColumn("ҲИБКК", min_value=0, max_value=100, format="%.1f"),
+            "Аҳоли (минг)": st.column_config.NumberColumn("Аҳоли (минг)", format="%.1f"),
+        }
+        for k in ["I","II","III","IV","V","VI","VII"]:
+            d_cfg[D_HDR[k]] = st.column_config.NumberColumn(
+                D_HDR[k], format="%.0f", help=d_block_help[D_HDR[k]],
+            )
         st.dataframe(
             district_table, hide_index=True, width='stretch', height=380,
-            column_config={
-                "ҲИБКК": st.column_config.ProgressColumn("ҲИБКК", min_value=0, max_value=100, format="%.1f"),
-                "Аҳоли (минг)": st.column_config.NumberColumn("Аҳоли (минг)", format="%.1f"),
-                "I":   st.column_config.NumberColumn("I",   format="%.0f", help=d_block_help["I"]),
-                "II":  st.column_config.NumberColumn("II",  format="%.0f", help=d_block_help["II"]),
-                "III": st.column_config.NumberColumn("III", format="%.0f", help=d_block_help["III"]),
-                "IV":  st.column_config.NumberColumn("IV",  format="%.0f", help=d_block_help["IV"]),
-                "V":   st.column_config.NumberColumn("V",   format="%.0f", help=d_block_help["V"]),
-                "VI":  st.column_config.NumberColumn("VI",  format="%.0f", help=d_block_help["VI"]),
-                "VII": st.column_config.NumberColumn("VII", format="%.0f", help=d_block_help["VII"]),
-            },
+            column_config=d_cfg,
         )
 
     # ── Similar regions + active warnings ──────────────────────────────────
@@ -1196,7 +1216,7 @@ with st.sidebar:
     st.markdown(
         f"""<div style="padding:6px 0 14px 0;border-bottom:1px solid #e2e8f0;margin-bottom:14px">
               <div style="font-size:18px;font-weight:600;color:{PALETTE['navy']};letter-spacing:0.3px">ҲИБКК</div>
-              <div style="font-size:11px;color:#475569">Ҳудудий иқтисодий барқарорлик</div>
+              <div style="font-size:11px;color:#475569;line-height:1.4">Ҳудудий иқтисодий барқарорлик композит кўрсаткичи</div>
             </div>""",
         unsafe_allow_html=True,
     )
@@ -1211,10 +1231,10 @@ with st.sidebar:
     st.session_state["filter_last_update"] = last_update
 
     st.markdown("**🗺 Навигация**")
-    region_options = ["Барча ҳудудлар"] + data["regions"]["name_uz"].tolist()
+    region_options = ["Барча ҳудудлар"] + sorted(data["regions"]["name_uz"].tolist())
     cur = st.session_state.selected_region
     cur_idx = region_options.index(cur) if cur in region_options else 0
-    picked = st.selectbox("Вилоят танлаш", region_options, index=cur_idx, key="region_picker")
+    picked = st.selectbox("Ҳудуд танлаш", region_options, index=cur_idx, key="region_picker")
 
     if picked != "Барча ҳудудлар":
         if st.session_state.selected_region != picked:
@@ -1225,10 +1245,6 @@ with st.sidebar:
             st.session_state.selected_region = None
             st.rerun()
 
-    if st.session_state.selected_region:
-        if st.button("← Бош саҳифага қайтиш", width='stretch'):
-            st.session_state.selected_region = None
-            st.rerun()
 
     st.markdown("---")
     st.markdown(
@@ -1255,7 +1271,7 @@ else:
 st.markdown(
     f"""<div style="margin-top:30px;padding:12px 4px;border-top:1px solid #e2e8f0;
                    display:flex;justify-content:space-between;font-size:10px;color:#94A3B8">
-          <div>ҲИБКК дашборд прототипи · Plotly + Streamlit · GeoJSON: akbartus/GeoJSON-Uzbekistan (OSM, GPL-3.0)</div>
+          <div>Ҳудудий иқтисодий барқарорлик композит кўрсаткичи (ҲИБКК) дашборди · Plotly + Streamlit · GeoJSON: akbartus/GeoJSON-Uzbekistan (OSM, GPL-3.0)</div>
           <div>Маълумот: синтетик демо · {len(data['regions'])} вилоят · {len(data['districts'])} туман</div>
         </div>""",
     unsafe_allow_html=True,
