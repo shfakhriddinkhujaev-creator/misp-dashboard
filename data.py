@@ -138,7 +138,7 @@ def _signal_label(level: int) -> str:
     """Tier labels (Яхши/Ўрта/Хавф/Тангли) - same wording as the map legend
     in the original mockup. The EWS response levels (Мониторинг/Диққат/
     Огоҳлантириш/Кризис) live separately on the warnings panel."""
-    return {1: "Яхши", 2: "Ўртача", 3: "Хавфли", 4: "Инқирозли"}[level]
+    return {1: "Яхши", 2: "Ўртача", 3: "Хавфли", 4: "Жуда ёмон"}[level]
 
 
 def _signal_color(level: int) -> str:
