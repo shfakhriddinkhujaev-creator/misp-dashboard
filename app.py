@@ -154,6 +154,16 @@ def filter_seed(quarter: str, year: str) -> int:
     return int(year) * 10 + (QUARTERS.index(quarter) + 1)
 
 
+UZ_MONTHS_SHORT = ["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"]
+
+
+def uz_month_label(d, with_year: bool = True) -> str:
+    """Format a datetime/Timestamp as 'Ноя 2024' (Uzbek short month)."""
+    if d is None:
+        return ""
+    return f"{UZ_MONTHS_SHORT[d.month - 1]} {d.year}" if with_year else UZ_MONTHS_SHORT[d.month - 1]
+
+
 @st.cache_data(show_spinner=False)
 def load_geojson():
     """Fetch the OpenStreetMap-derived Uzbekistan regional GeoJSON
@@ -438,7 +448,7 @@ def make_plotly_choropleth(regions_df: pd.DataFrame, geojson: dict, height: int 
         category_orders={"signal_label": [SIGNAL[1]["label"], SIGNAL[2]["label"],
                                           SIGNAL[3]["label"], SIGNAL[4]["label"]]},
         hover_name="name_uz",
-        custom_data=["name_uz", "misp", "rank", "signal_label", "delta_q"],
+        custom_data=["name_uz", "misp", "rank", "signal_label", "delta_q", "population_k"],
         center={"lat": 41.7, "lon": 64.5},
         zoom=4.6,
         map_style="white-bg",
@@ -452,7 +462,8 @@ def make_plotly_choropleth(regions_df: pd.DataFrame, geojson: dict, height: int 
             "ҲИБКК балл: %{customdata[1]:.1f}<br>"
             "Ўрин: %{customdata[2]}<br>"
             "Сигнал: %{customdata[3]}<br>"
-            "Чорак ўзг.: %{customdata[4]:+.1f}"
+            "Чорак ўзг.: %{customdata[4]:+.1f}<br>"
+            "Аҳоли: %{customdata[5]:,.0f} минг"
             "<extra></extra>"
         ),
     )
@@ -503,7 +514,7 @@ def make_region_highlight_map(regions_df: pd.DataFrame, geojson: dict,
         color_discrete_map={"selected": sel_color, "other": "#cbd5e1"},
         category_orders={"highlight": ["other", "selected"]},
         hover_name="name_uz",
-        custom_data=["name_uz", "misp", "rank", "signal_label"],
+        custom_data=["name_uz", "misp", "rank", "signal_label", "population_k"],
         center={"lat": 41.7, "lon": 64.5},
         zoom=4.6,
         map_style="white-bg",
@@ -515,7 +526,8 @@ def make_region_highlight_map(regions_df: pd.DataFrame, geojson: dict,
         hovertemplate=(
             "<b>%{customdata[0]}</b><br>"
             "ҲИБКК балл: %{customdata[1]:.1f}<br>"
-            "Ўрин: %{customdata[2]} · %{customdata[3]}"
+            "Ўрин: %{customdata[2]} · %{customdata[3]}<br>"
+            "Аҳоли: %{customdata[4]:,.0f} минг"
             "<extra></extra>"
         ),
         showlegend=False,
@@ -613,7 +625,7 @@ def make_trend_lines(panel_df: pd.DataFrame, regions_df: pd.DataFrame):
     bot3 = regions_df.nsmallest(3, "misp")["name_uz"].tolist()
     selected = top3 + bot3
     sub = panel_df[panel_df["name_uz"].isin(selected)].copy()
-    sub["month_label"] = sub["month"].dt.strftime("%b")
+    sub["month_label"] = sub["month"].apply(lambda d: uz_month_label(d, with_year=False))
 
     fig = go.Figure()
     colors = {
@@ -674,10 +686,10 @@ def make_district_choropleth(districts_sub: pd.DataFrame, region_name: str):
         path=["parent", "district_name"],
         values="population_k", color="misp",
         color_continuous_scale=[
-            (0.00, "#FAECE7"), (0.30, "#FAECE7"),
-            (0.30, "#FAEEDA"), (0.50, "#FAEEDA"),
-            (0.50, "#E1F5EE"), (0.70, "#E1F5EE"),
-            (0.70, "#E6F1FB"), (1.00, "#185FA5"),
+            (0.00, SIGNAL[4]["main"]), (0.30, SIGNAL[4]["main"]),
+            (0.30, SIGNAL[3]["main"]), (0.50, SIGNAL[3]["main"]),
+            (0.50, SIGNAL[2]["main"]), (0.70, SIGNAL[2]["main"]),
+            (0.70, SIGNAL[1]["main"]), (1.00, SIGNAL[1]["main"]),
         ],
         range_color=(0, 100),
         custom_data=["misp", "signal"],
@@ -713,12 +725,15 @@ def make_national_trend_chart(panel_df: pd.DataFrame, regions_df: pd.DataFrame, 
     fig.add_hrect(y0=50, y1=70, fillcolor=SIGNAL[2]["bg"], opacity=0.35, line_width=0)
     fig.add_hrect(y0=70, y1=100, fillcolor=SIGNAL[1]["bg"], opacity=0.35, line_width=0)
 
+    nat_first = weighted_monthly("misp")
+    x_labels = [uz_month_label(d) for d in nat_first["month"]]
+
     # Block lines (lighter, dashed, hidden until user toggles on)
     for b in BLOCKS:
         col = f"block_{b[0]}"
         agg = weighted_monthly(col)
         fig.add_trace(go.Scatter(
-            x=agg["month"], y=agg["value"],
+            x=x_labels, y=agg["value"],
             mode="lines", name=f"{b[0]}. {b[1]}",
             line=dict(color=b[3], width=1.6, dash="dot"),
             visible="legendonly",
@@ -726,9 +741,8 @@ def make_national_trend_chart(panel_df: pd.DataFrame, regions_df: pd.DataFrame, 
         ))
 
     # National composite line - thick, headline
-    nat = weighted_monthly("misp")
     fig.add_trace(go.Scatter(
-        x=nat["month"], y=nat["value"],
+        x=x_labels, y=nat_first["value"],
         mode="lines+markers", name="Миллий ҲИБКК",
         line=dict(color=PALETTE["navy"], width=3.5),
         marker=dict(size=7, color=PALETTE["navy"]),
@@ -764,11 +778,13 @@ def make_region_blocks_trend(panel_sub: pd.DataFrame, region_name: str, height: 
     fig.add_hrect(y0=50, y1=70, fillcolor=SIGNAL[2]["bg"], opacity=0.35, line_width=0)
     fig.add_hrect(y0=70, y1=100, fillcolor=SIGNAL[1]["bg"], opacity=0.35, line_width=0)
 
+    x_labels = [uz_month_label(d) for d in panel_sub["month"]]
+
     # 7 block lines (hidden by default)
     for b in BLOCKS:
         col = f"block_{b[0]}"
         fig.add_trace(go.Scatter(
-            x=panel_sub["month"], y=panel_sub[col],
+            x=x_labels, y=panel_sub[col],
             mode="lines", name=f"{b[0]}. {b[1]}",
             line=dict(color=b[3], width=1.6, dash="dot"),
             visible="legendonly",
@@ -777,7 +793,7 @@ def make_region_blocks_trend(panel_sub: pd.DataFrame, region_name: str, height: 
 
     # Region composite line - thick
     fig.add_trace(go.Scatter(
-        x=panel_sub["month"], y=panel_sub["misp"],
+        x=x_labels, y=panel_sub["misp"],
         mode="lines+markers", name=f"{region_name} ҲИБКК",
         line=dict(color=PALETTE["navy"], width=3.5),
         marker=dict(size=7, color=PALETTE["navy"]),
@@ -805,7 +821,7 @@ def make_region_blocks_trend(panel_sub: pd.DataFrame, region_name: str, height: 
 def make_region_trend(panel_sub: pd.DataFrame, region_name: str):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=panel_sub["month"].dt.strftime("%b %Y"),
+        x=panel_sub["month"].apply(uz_month_label),
         y=panel_sub["misp"], mode="lines+markers",
         line=dict(color=PALETTE["teal"], width=2.5),
         marker=dict(size=6, color=PALETTE["teal"]),
@@ -857,7 +873,8 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
     # ── KPI row ─────────────────────────────────────────────────────────────
     delta_color = PALETTE["green"] if kpi["national_delta"] >= 0 else PALETTE["red"]
     delta_sign = "+" if kpi["national_delta"] >= 0 else ""
-    c1, c2, c3, c4 = st.columns(4)
+    total_pop_mln = regions_df["population_k"].sum() / 1000  # to millions
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         st.markdown(kpi_card(
             "Миллий ҲИБКК индекси", f"{kpi['national_misp']}", PALETTE["navy"],
@@ -865,22 +882,39 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         ), unsafe_allow_html=True)
     with c2:
         st.markdown(kpi_card(
+            "Жами аҳоли", f"{total_pop_mln:.1f} млн", PALETTE["teal"],
+            "14 ҳудуд бўйича жами",
+        ), unsafe_allow_html=True)
+    with c3:
+        st.markdown(kpi_card(
             "Жуда ёмон ҳудудлар", f"{kpi['critical_count']}", PALETTE["red"],
             kpi["critical_names"] or "-",
         ), unsafe_allow_html=True)
-    with c3:
+    with c4:
         st.markdown(kpi_card(
             "Энг яхши ўсиш", kpi["best_growth_region"], PALETTE["green"],
             f"+{kpi['best_growth_delta']} пункт ({kpi['best_growth_from']}→{kpi['best_growth_to']})",
             PALETTE["green"],
         ), unsafe_allow_html=True)
-    with c4:
+    with c5:
         st.markdown(kpi_card(
             "Фаол огоҳлантиришлар", f"{kpi['active_warnings']}", PALETTE["orange"],
             f"{kpi['warn_lvl4']} та 4-даража · {kpi['warn_lvl3']} та 3-даража · {kpi['warn_lvl2']} та 2-даража",
         ), unsafe_allow_html=True)
 
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+    # ── Population overview (compact, expandable) ──────────────────────────
+    with st.expander("👥 Минтақалар бўйича аҳоли", expanded=False):
+        pop_df = regions_df[["name_uz", "population_k"]].sort_values("population_k", ascending=False).copy()
+        pop_df["population_k"] = (pop_df["population_k"] / 1000).round(2)
+        pop_df.columns = ["Минтақа", "Аҳоли (млн)"]
+        st.dataframe(
+            pop_df, hide_index=True, width='stretch', height=400,
+            column_config={
+                "Аҳоли (млн)": st.column_config.NumberColumn("Аҳоли (млн)", format="%.2f"),
+            },
+        )
 
     # ── Map + warnings ──────────────────────────────────────────────────────
     map_col, warn_col = st.columns([2, 1])
@@ -990,11 +1024,12 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
     }
     table_df = regions_df[["rank", "name_uz", "misp", "delta_q", "signal_label",
                            "block_I", "block_II", "block_III", "block_IV",
-                           "block_V", "block_VI", "block_VII"]].copy()
+                           "block_V", "block_VI", "block_VII", "population_k"]].copy()
+    table_df["population_k"] = (table_df["population_k"] / 1000).round(2)
     table_df.columns = ["#", "Ҳудуд", "ҲИБКК", "Δ чорак", "Сигнал",
                          SHORT_BLOCK_HDR["I"], SHORT_BLOCK_HDR["II"], SHORT_BLOCK_HDR["III"],
                          SHORT_BLOCK_HDR["IV"], SHORT_BLOCK_HDR["V"], SHORT_BLOCK_HDR["VI"],
-                         SHORT_BLOCK_HDR["VII"]]
+                         SHORT_BLOCK_HDR["VII"], "Аҳоли (млн)"]
     block_help = {SHORT_BLOCK_HDR[k]: f"{k}. {b[1]} (тарози: {b[2]*100:.0f}%)"
                   for k, b in zip(SHORT_BLOCK_HDR.keys(), BLOCKS)}
 
@@ -1032,12 +1067,13 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         .map(_signal_bg, subset=score_cols)
         .map(_signal_label_bg, subset=["Сигнал"])
         .map(_delta_bg, subset=["Δ чорак"])
-        .format({"ҲИБКК": "{:.1f}", "Δ чорак": "{:+.2f}",
+        .format({"ҲИБКК": "{:.1f}", "Δ чорак": "{:+.2f}", "Аҳоли (млн)": "{:.2f}",
                  **{SHORT_BLOCK_HDR[k]: "{:.0f}" for k in ["I","II","III","IV","V","VI","VII"]}})
     )
     column_cfg = {
         "ҲИБКК":  st.column_config.NumberColumn("ҲИБКК",  help="Композит ҲИБКК балл (0-100)"),
         "Δ чорак": st.column_config.NumberColumn("Δ чорак", help="Олдинги чоракка нисбатан ўзгариш"),
+        "Аҳоли (млн)": st.column_config.NumberColumn("Аҳоли (млн)", help="Ҳудуд аҳолиси (миллион киши)"),
     }
     for k in ["I","II","III","IV","V","VI","VII"]:
         column_cfg[SHORT_BLOCK_HDR[k]] = st.column_config.NumberColumn(
@@ -1234,7 +1270,7 @@ def render_region_profile(region_name: str, d: dict):
 
     # ── District-level drill-down ──────────────────────────────────────────
     st.markdown(
-        f'<div class="panel-title">Туман даражасига чуқур таҳлил <span class="badge">{len(districts_sub)} туман</span></div>',
+        f'<div class="panel-title">Туманлараро даражасида таҳлил <span class="badge">{len(districts_sub)} туман</span></div>',
         unsafe_allow_html=True,
     )
     d_col, t_col = st.columns([1, 1])
@@ -1411,12 +1447,10 @@ with st.sidebar:
 Ушбу лойиҳа: Ўзбекистон маъмурий-ҳудудларининг иқтисодий барқарорлигини баҳоловчи композит кўрсаткич (ҲИБКК) дашборди.
 
 - **7 таҳлил блоки** концепцияга мос
-- **14 ҳудуд + 200+ туман** drill-down
+- **14 ҳудуд + 215+ туман/шаҳар** drill-down
 - **Эрта огоҳлантириш тизими** 4 даражали
 
-Маълумот синтетик, методология ҳақиқий.
-
-📎 Манбалар: ЎзСТАТ, Марказий банк, МДА реестрлар."""
+📎 Манбалар: Ўзбекистон Республикаси Президенти ҳузуридаги Статистика агентлиги, Ўзбекистон Республикаси Марказий банки ҳамда давлат идораларининг очиқ реестрлари."""
     )
 
 # Route to the correct view
