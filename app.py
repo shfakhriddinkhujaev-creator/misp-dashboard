@@ -48,7 +48,7 @@ PALETTE = {
 }
 SIGNAL = {
     1: {"bg": "#DCFCE7", "fg": "#14532D", "main": "#16A34A", "label": "Яхши"},        # green
-    2: {"bg": "#ECFCCB", "fg": "#365314", "main": "#A3E635", "label": "Ўртача"},      # yellow-green
+    2: {"bg": "#FEF9C3", "fg": "#713F12", "main": "#FACC15", "label": "Ўртача"},      # yellow
     3: {"bg": "#FFEDD5", "fg": "#7C2D12", "main": "#EA580C", "label": "Хавфли"},      # orange
     4: {"bg": "#FEE2E2", "fg": "#7F1D1D", "main": "#DC2626", "label": "Жуда ёмон"},   # red
 }
@@ -946,29 +946,9 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
                         st.rerun()
 
         st.caption(
-            "🟩 ≥70 Яхши  ·  🟨 50-69 Ўртача  ·  🟧 30-49 Хавфли  ·  🟥 <30 Жуда ёмон"
+            "🟩 ≥70 Яхши  ·  🟨 50-69 Ўртача  ·  🟧 30-49 Хавфли  ·  🟥 <30 Жуда ёмон  ·  "
+            "Drill-down: чап томондаги сайдбардан вилоят танланг."
         )
-
-        # Region quick-pick grid - 14 buttons under the map. Acts as a "click
-        # the region" affordance, since native click-on-choropleth wasn't
-        # reliable in this stack. Sorted by rank so users see the leaderboard.
-        st.markdown(
-            '<div class="panel-title">📊 Ҳудудлар кесимида '
-            '<span class="badge">пастдаги ҳудуд карточкасини босинг → тўлиқ профил очилади</span></div>',
-            unsafe_allow_html=True,
-        )
-        SIG_EMOJI = {1: "🟢", 2: "🟡", 3: "🟠", 4: "🔴"}
-        sorted_for_grid = regions_df.sort_values("rank").reset_index(drop=True)
-        grid_top = st.columns(7)
-        grid_bot = st.columns(7)
-        for idx, row in sorted_for_grid.iterrows():
-            cell = grid_top[idx] if idx < 7 else grid_bot[idx - 7]
-            with cell:
-                label = f"{SIG_EMOJI[row['signal']]} {row['name_uz']}\n{row['misp']:.1f} · #{row['rank']}"
-                if st.button(label, key=f"region_btn_{row['name_uz']}", width="stretch"):
-                    if st.session_state.get("selected_region") != row["name_uz"]:
-                        st.session_state.selected_region = row["name_uz"]
-                        st.rerun()
 
     with warn_col:
         st.markdown(
@@ -1191,7 +1171,7 @@ def render_region_profile(region_name: str, d: dict):
             st.markdown(
                 f"""<div class="kpi-card" style="text-align:center;padding:10px 8px">
                       <div class="accent" style="background:{b[3]}"></div>
-                      <div class="label" style="font-size:10px">{b[0]}. {b[1].split()[0]}</div>
+                      <div class="label" style="font-size:10px;line-height:1.25;min-height:26px">{b[0]}. {b[1]}</div>
                       <div style="font-size:22px;font-weight:600;color:{SIGNAL[s_lvl]['main']};margin-top:2px">{score:.1f}</div>
                       <div style="font-size:9px;color:#94A3B8;margin-top:2px">{SIGNAL[s_lvl]['label']}</div>
                     </div>""",
@@ -1436,7 +1416,7 @@ with st.sidebar:
 
 Маълумот синтетик, методология ҳақиқий.
 
-📎 Манбалар: ЎзСТАТ, Марказий банк, МДА реестрлар (концепцияга кўра)."""
+📎 Манбалар: ЎзСТАТ, Марказий банк, МДА реестрлар."""
     )
 
 # Route to the correct view
