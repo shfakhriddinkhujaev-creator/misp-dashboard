@@ -239,7 +239,7 @@ def generate_misp_data(seed: int = 42) -> dict:
             })
         if r["block_III"] < 35:
             warnings.append({
-                "region": r["name_uz"], "indicator": "Корхоналар",
+                "region": r["name_uz"], "indicator": "Корхоналар сони",
                 "level": 4, "detail": "Рег./тугатилган = 0.7 (чегара: 1.0)",
                 "block": "III",
             })
@@ -257,7 +257,7 @@ def generate_misp_data(seed: int = 42) -> dict:
             })
         if r["block_II"] < 45:
             warnings.append({
-                "region": r["name_uz"], "indicator": "Ёш ишсизлик",
+                "region": r["name_uz"], "indicator": "Ёшлар орасида ишсизлик",
                 "level": 3, "detail": f"{22 + (45 - r['block_II']) * 0.2:.1f}% (чегара: 22%)",
                 "block": "II",
             })
