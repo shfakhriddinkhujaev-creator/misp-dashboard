@@ -1,5 +1,5 @@
 """
-ҲИБКК — Ҳудудий иқтисодий барқарорлик панели.
+ҲИБКК - Ҳудудий иқтисодий барқарорлик панели.
 
 Streamlit dashboard implementing the project concept: 14-region scorecard
 + click-through drill-down to district level, following the methodology and
@@ -30,7 +30,7 @@ from data import (
 # Page setup
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="ҲИБКК — Ҳудудий иқтисодий барқарорлик",
+    page_title="ҲИБКК - Ҳудудий иқтисодий барқарорлик",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -48,9 +48,9 @@ PALETTE = {
 }
 SIGNAL = {
     1: {"bg": "#E6F1FB", "fg": "#0C447C", "main": "#185FA5", "label": "Яхши"},
-    2: {"bg": "#E1F5EE", "fg": "#085041", "main": "#16A34A", "label": "Ўрта"},
-    3: {"bg": "#FAEEDA", "fg": "#633806", "main": "#C8922A", "label": "Хавф"},
-    4: {"bg": "#FAECE7", "fg": "#712B13", "main": "#DC2626", "label": "Тангли"},
+    2: {"bg": "#E1F5EE", "fg": "#085041", "main": "#16A34A", "label": "Ўртача"},
+    3: {"bg": "#FAEEDA", "fg": "#633806", "main": "#C8922A", "label": "Хавфли"},
+    4: {"bg": "#FAECE7", "fg": "#712B13", "main": "#DC2626", "label": "Жуда ёмон"},
 }
 LEVEL = {
     4: {"label": "4-даража · Кризис",        "color": PALETTE["red"]},
@@ -133,8 +133,25 @@ GEOJSON_CACHE = Path("uzbekistan_regional.geojson")
 
 
 @st.cache_data(show_spinner=False)
-def load_data():
-    return generate_misp_data()
+def load_data(seed: int = 42):
+    return generate_misp_data(seed)
+
+
+# Quarter/year filters drive a seed → different (consistent) synthetic data per
+# combination. This is the "demo dynamics" that show the dashboard reacting to
+# filter changes rather than ignoring them.
+QUARTERS = ["I чорак", "II чорак", "III чорак", "IV чорак"]
+YEARS = ["2024", "2025"]
+QUARTER_END_DATE = {
+    "I чорак":   "03-31",
+    "II чорак":  "06-30",
+    "III чорак": "09-30",
+    "IV чорак":  "12-31",
+}
+
+
+def filter_seed(quarter: str, year: str) -> int:
+    return int(year) * 10 + (QUARTERS.index(quarter) + 1)
 
 
 @st.cache_data(show_spinner=False)
@@ -143,13 +160,13 @@ def load_geojson():
     (akbartus/GeoJSON-Uzbekistan, GPL-3.0).
 
     Records full diagnostic state into a returned dict so the UI can show
-    the user exactly what happened. Always returns a dict — never None —
+    the user exactly what happened. Always returns a dict - never None -
     with keys: ok (bool), gj (dict|None), source (str), bytes (int),
     n_features_raw (int), n_features_clean (int), prop_keys (list),
     sample_props (dict|None), error (str|None).
     """
     diag = {
-        "ok": False, "gj": None, "source": "—", "bytes": 0,
+        "ok": False, "gj": None, "source": "-", "bytes": 0,
         "n_features_raw": 0, "n_features_clean": 0,
         "prop_keys": [], "sample_props": None, "error": None,
     }
@@ -217,7 +234,7 @@ def load_geojson():
 
 
 # Direct mapping from our internal region names to the akbartus GeoJSON's
-# ADM1_UZ feature property — verified against the actual file. This avoids
+# ADM1_UZ feature property - verified against the actual file. This avoids
 # the fragility of substring matching when the same root word ("Toshkent")
 # appears in two different administrative units.
 GEO_NAME_MAP = {
@@ -241,7 +258,7 @@ GEO_NAME_REVERSE = {v: k for k, v in GEO_NAME_MAP.items()}
 
 def geojson_name_lookup(gj: dict) -> dict:
     """Identify the property key the GeoJSON uses for region labels. Akbartus
-    ships ADM1_UZ, ADM1_RU, ADM1_EN — we prefer UZ because that matches our
+    ships ADM1_UZ, ADM1_RU, ADM1_EN - we prefer UZ because that matches our
     GEO_NAME_MAP, with English/Russian fallbacks for schema-drift safety."""
     if not gj or "features" not in gj or not gj["features"]:
         return {"key": None, "names": []}
@@ -406,7 +423,7 @@ def make_plotly_choropleth(regions_df: pd.DataFrame, geojson: dict, height: int 
         SIGNAL[3]["label"]: SIGNAL[3]["main"],
         SIGNAL[4]["label"]: SIGNAL[4]["main"],
     }
-    # MapLibre choropleth_map — visually best (pale basemap, smooth pan/zoom).
+    # MapLibre choropleth_map - visually best (pale basemap, smooth pan/zoom).
     # Click drill-down handled via the sidebar selectbox: streamlit-plotly-events
     # 0.0.6 doesn't render MapLibre at all, and switching to px.choropleth
     # (geographic) with discrete colors caused fill-outside-polygon artifacts
@@ -473,7 +490,7 @@ def make_region_highlight_map(regions_df: pd.DataFrame, geojson: dict,
         lambda n: "selected" if n == selected_region else "other"
     )
 
-    # MapLibre choropleth_map — same renderer as the main map for visual
+    # MapLibre choropleth_map - same renderer as the main map for visual
     # consistency, and it rendered cleanly when we tested it earlier.
     fig = px.choropleth_map(
         df,
@@ -681,15 +698,18 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
     warnings_df = d["warnings"]
     kpi = get_kpis(regions_df, warnings_df)
 
+    fq = st.session_state.get("filter_quarter", "III чорак")
+    fy = st.session_state.get("filter_year", "2025")
+    fu = st.session_state.get("filter_last_update", "2025-09-30")
     st.markdown(
-        """<div class="misp-header">
+        f"""<div class="misp-header">
              <div>
-               <h1>ҲИБКК — ҳудудий иқтисодий барқарорлик композит кўрсаткичи</h1>
-               <div class="sub">14 вилоят · 7 таҳлил блоки · 215+ туман · Композит индекс 0–100</div>
+               <h1>ҲИБКК: ҳудудий иқтисодий барқарорлик композит кўрсаткичи</h1>
+               <div class="sub">14 ҳудуд · 7 таҳлил блоки · 215+ туман · Композит индекс 0-100</div>
              </div>
              <div style="font-size:11px; color:rgba(255,255,255,0.85); text-align:right">
-               III чорак 2025<br>
-               <span style="opacity:0.7">Охирги янгиланиш: 2025-09-30</span>
+               {fq} {fy}<br>
+               <span style="opacity:0.7">Охирги янгиланиш: {fu}</span>
              </div>
            </div>""",
         unsafe_allow_html=True,
@@ -706,8 +726,8 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         ), unsafe_allow_html=True)
     with c2:
         st.markdown(kpi_card(
-            "Тангли вилоятлар", f"{kpi['critical_count']}", PALETTE["red"],
-            kpi["critical_names"] or "—",
+            "Жуда ёмон ҳудудлар", f"{kpi['critical_count']}", PALETTE["red"],
+            kpi["critical_names"] or "-",
         ), unsafe_allow_html=True)
     with c3:
         st.markdown(kpi_card(
@@ -750,7 +770,7 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         if fail_reason is None:
             # Plotly choropleth via st.plotly_chart(on_select="rerun"). Replaces
             # streamlit-folium because that library's 0.27.x click-event channel
-            # was unreliable in this app — pan/zoom returned bounds but every
+            # was unreliable in this app - pan/zoom returned bounds but every
             # last_* click field stayed null even on plain Marker clicks. Plotly
             # uses a separate, dependable selection-event pipeline.
             fig_map = make_plotly_choropleth(regions_df, geojson, height=440)
@@ -787,10 +807,10 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
                         st.rerun()
 
         st.caption(
-            "🟦 ≥70 Яхши  ·  🟩 50–69 Ўрта  ·  🟧 30–49 Хавф  ·  🟥 <30 Тангли"
+            "🟦 ≥70 Яхши  ·  🟩 50-69 Ўртача  ·  🟧 30-49 Хавфли  ·  🟥 <30 Жуда ёмон"
         )
 
-        # Region quick-pick grid — 14 buttons under the map. Acts as a "click
+        # Region quick-pick grid - 14 buttons under the map. Acts as a "click
         # the region" affordance, since native click-on-choropleth wasn't
         # reliable in this stack. Sorted by rank so users see the leaderboard.
         st.markdown(
@@ -836,29 +856,59 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
 
     # ── Ranking table ───────────────────────────────────────────────────────
     st.markdown(
-        '<div class="panel-title">Вилоятлар рейтинги <span class="badge">III чорак 2025</span></div>',
+        f'<div class="panel-title">Ҳудудлар кўрсаткичлари <span class="badge">{st.session_state.get("filter_quarter","III чорак")} {st.session_state.get("filter_year","2025")}</span></div>',
         unsafe_allow_html=True,
     )
     table_df = regions_df[["rank", "name_uz", "misp", "delta_q", "signal_label",
                            "block_I", "block_II", "block_III", "block_IV",
                            "block_V", "block_VI", "block_VII"]].copy()
-    table_df.columns = ["#", "Вилоят", "ҲИБКК", "Δ чорак", "Сигнал",
+    table_df.columns = ["#", "Ҳудуд", "ҲИБКК", "Δ чорак", "Сигнал",
                          "I", "II", "III", "IV", "V", "VI", "VII"]
+    block_help = {b[0]: f"{b[0]}. {b[1]} (тарози: {b[2]*100:.0f}%)" for b in BLOCKS}
+
+    # Color cells by signal tier. Streamlit's ProgressColumn only supports a
+    # single theme color, so we use a Pandas Styler with per-cell background
+    # color keyed off the same 0-30/30-50/50-70/70+ thresholds as the map.
+    def _signal_bg(val):
+        if pd.isna(val):
+            return ""
+        if val >= 70:   lvl = 1
+        elif val >= 50: lvl = 2
+        elif val >= 30: lvl = 3
+        else:           lvl = 4
+        return f"background-color: {SIGNAL[lvl]['bg']}; color: {SIGNAL[lvl]['fg']}; font-weight: 600;"
+
+    def _signal_label_bg(label):
+        for k, v in SIGNAL.items():
+            if v["label"] == label:
+                return f"background-color: {SIGNAL[k]['bg']}; color: {SIGNAL[k]['fg']}; font-weight: 600;"
+        return ""
+
+    score_cols = ["ҲИБКК", "I", "II", "III", "IV", "V", "VI", "VII"]
+    styled = (
+        table_df.style
+        .map(_signal_bg, subset=score_cols)
+        .map(_signal_label_bg, subset=["Сигнал"])
+        .format({"ҲИБКК": "{:.1f}", "Δ чорак": "{:+.2f}",
+                 **{c: "{:.0f}" for c in ["I","II","III","IV","V","VI","VII"]}})
+    )
     st.dataframe(
-        table_df, hide_index=True, width='stretch', height=400,
+        styled, hide_index=True, width='stretch', height=400,
         column_config={
-            "ҲИБКК": st.column_config.ProgressColumn(
-                "ҲИБКК", min_value=0, max_value=100, format="%.1f",
-            ),
-            "Δ чорак": st.column_config.NumberColumn("Δ чорак", format="%+.2f"),
-            "I":   st.column_config.ProgressColumn("I", min_value=0, max_value=100, format="%.0f"),
-            "II":  st.column_config.ProgressColumn("II", min_value=0, max_value=100, format="%.0f"),
-            "III": st.column_config.ProgressColumn("III", min_value=0, max_value=100, format="%.0f"),
-            "IV":  st.column_config.ProgressColumn("IV", min_value=0, max_value=100, format="%.0f"),
-            "V":   st.column_config.ProgressColumn("V", min_value=0, max_value=100, format="%.0f"),
-            "VI":  st.column_config.ProgressColumn("VI", min_value=0, max_value=100, format="%.0f"),
-            "VII": st.column_config.ProgressColumn("VII", min_value=0, max_value=100, format="%.0f"),
+            "ҲИБКК":  st.column_config.NumberColumn("ҲИБКК",  help="Композит ҲИБКК балл (0-100)"),
+            "Δ чорак": st.column_config.NumberColumn("Δ чорак", help="Олдинги чоракка нисбатан ўзгариш"),
+            "I":   st.column_config.NumberColumn("I",   help=block_help["I"]),
+            "II":  st.column_config.NumberColumn("II",  help=block_help["II"]),
+            "III": st.column_config.NumberColumn("III", help=block_help["III"]),
+            "IV":  st.column_config.NumberColumn("IV",  help=block_help["IV"]),
+            "V":   st.column_config.NumberColumn("V",   help=block_help["V"]),
+            "VI":  st.column_config.NumberColumn("VI",  help=block_help["VI"]),
+            "VII": st.column_config.NumberColumn("VII", help=block_help["VII"]),
         },
+    )
+    st.caption(
+        "💡 I. Иқтисодий фаоллик · II. Меҳнат бозори · III. Тадбиркорлик ва инвестиция · "
+        "IV. Инсоний капитал · V. Инфратузилма · VI. Молиявий инклюзия · VII. Экологик барқарорлик"
     )
 
     # ── Trends + block bars row ────────────────────────────────────────────
@@ -880,14 +930,14 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
     with st.expander("📘 Методология"):
         st.markdown(
             f"""
-            **Композит индекс ҲИБКК** — концепция презентациясига асосланган.
+            **Композит индекс ҲИБКК** - концепция презентациясига асосланган.
 
-            - **Нормализация**: блок-кўрсаткичлари [0–100] шкаласига Min-Max усулда келтирилади (манфий йўналишли кўрсаткичлар инверсия қилинади).
+            - **Нормализация**: блок-кўрсаткичлари [0-100] шкаласига Min-Max усулда келтирилади (манфий йўналишли кўрсаткичлар инверсия қилинади).
             - **Тарозийлар**: Delphi экспертлар + PCA асосида: I={BLOCK_WEIGHTS[0]:.0%}, II={BLOCK_WEIGHTS[1]:.0%}, III={BLOCK_WEIGHTS[2]:.0%}, IV={BLOCK_WEIGHTS[3]:.0%}, V={BLOCK_WEIGHTS[4]:.0%}, VI={BLOCK_WEIGHTS[5]:.0%}, VII={BLOCK_WEIGHTS[6]:.0%}.
-            - **Ялпи ҲИБКК = ∑(блок_балли × тарозий)**, [0–100].
-            - **Сигнал даражалари**: ≥70 Мониторинг · 50–69 Диққат · 30–49 Огоҳлантириш · <30 Кризис.
+            - **Ялпи ҲИБКК = ∑(блок_балли × тарозий)**, [0-100].
+            - **Сигнал даражалари**: ≥70 Мониторинг · 50-69 Диққат · 30-49 Огоҳлантириш · <30 Кризис.
             - **Эрта огоҳлантириш тизими**: 8 прокси кўрсаткич (электр, корхоналар нисбати, бандлик, кредит, миграция, буджет, инфляция, НПЛ) орқали 4 даражали реакция.
-            - **Маълумот**: бу прототипда синтетик, методологияга мос. Ишлаб чиқаришда — ЎзСТАТ + Марказий банк + МДА реестрлари.
+            - **Маълумот**: бу прототипда синтетик, методологияга мос. Ишлаб чиқаришда - ЎзСТАТ + Марказий банк + МДА реестрлари.
             """
         )
 
@@ -994,11 +1044,19 @@ def render_region_profile(region_name: str, d: dict):
                                          "block_III", "block_IV", "block_V", "block_VI",
                                          "block_VII", "population_k"]].copy()
         district_table.columns = ["Туман", "ҲИБКК", "I", "II", "III", "IV", "V", "VI", "VII", "Аҳоли (минг)"]
+        d_block_help = {b[0]: f"{b[0]}. {b[1]} (тарози: {b[2]*100:.0f}%)" for b in BLOCKS}
         st.dataframe(
             district_table, hide_index=True, width='stretch', height=380,
             column_config={
                 "ҲИБКК": st.column_config.ProgressColumn("ҲИБКК", min_value=0, max_value=100, format="%.1f"),
                 "Аҳоли (минг)": st.column_config.NumberColumn("Аҳоли (минг)", format="%.1f"),
+                "I":   st.column_config.NumberColumn("I",   format="%.0f", help=d_block_help["I"]),
+                "II":  st.column_config.NumberColumn("II",  format="%.0f", help=d_block_help["II"]),
+                "III": st.column_config.NumberColumn("III", format="%.0f", help=d_block_help["III"]),
+                "IV":  st.column_config.NumberColumn("IV",  format="%.0f", help=d_block_help["IV"]),
+                "V":   st.column_config.NumberColumn("V",   format="%.0f", help=d_block_help["V"]),
+                "VI":  st.column_config.NumberColumn("VI",  format="%.0f", help=d_block_help["VI"]),
+                "VII": st.column_config.NumberColumn("VII", format="%.0f", help=d_block_help["VII"]),
             },
         )
 
@@ -1030,7 +1088,7 @@ def render_region_profile(region_name: str, d: dict):
             unsafe_allow_html=True,
         )
         if warn_sub.empty:
-            st.info("Бу вилоят бўйича фаол огоҳлантиришлар йўқ.")
+            st.info("Бу ҳудуд бўйича огоҳлантириш йўқ.")
         else:
             for _, w in warn_sub.iterrows():
                 color = LEVEL[w["level"]]["color"]
@@ -1053,7 +1111,7 @@ def render_region_profile(region_name: str, d: dict):
         score = r[f"block_{b[0]}"]
         urgency = "юқори" if score < 35 else "ўрта" if score < 50 else "паст"
         recs.append({
-            "title": f"{b[0]}. {b[1]}: {score:.1f} балл — заифликни бартараф этиш",
+            "title": f"{b[0]}. {b[1]}: {score:.1f} балл - заифликни бартараф этиш",
             "desc": (f"Ушбу блок миллий ўртачадан паст. Тавсия: МДА билан ҳамкорликда мақсадли дастур, "
                      f"6 ой давомида ойлик мониторинг, келаси чоракда +5 балл мақсади."),
             "urgency": urgency,
@@ -1072,7 +1130,6 @@ def render_region_profile(region_name: str, d: dict):
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidebar + main routing
 # ─────────────────────────────────────────────────────────────────────────────
-data = load_data()
 geo_diag = load_geojson()
 geojson = geo_diag["gj"] if geo_diag["ok"] else None
 geo_meta = geojson_name_lookup(geojson) if geojson else {"key": None, "names": []}
@@ -1094,16 +1151,21 @@ with st.sidebar:
     )
 
     st.markdown("**🔍 Фильтрлар**")
-    quarter = st.selectbox("Чорак", ["III чорак 2025", "II чорак 2025", "I чорак 2025"], index=0)
-    year = st.selectbox("Йил", ["2025", "2024"], index=0)
+    year = st.selectbox("Йил", YEARS, index=YEARS.index("2025"))
+    quarter = st.selectbox("Чорак", QUARTERS, index=QUARTERS.index("III чорак"))
+    data = load_data(filter_seed(quarter, year))
+    last_update = f"{year}-{QUARTER_END_DATE[quarter]}"
+    st.session_state["filter_quarter"] = quarter
+    st.session_state["filter_year"] = year
+    st.session_state["filter_last_update"] = last_update
 
     st.markdown("**🗺 Навигация**")
-    region_options = ["Барча вилоятлар (Executive Summary)"] + data["regions"]["name_uz"].tolist()
+    region_options = ["Барча ҳудудлар"] + data["regions"]["name_uz"].tolist()
     cur = st.session_state.selected_region
     cur_idx = region_options.index(cur) if cur in region_options else 0
     picked = st.selectbox("Вилоят танлаш", region_options, index=cur_idx, key="region_picker")
 
-    if picked != "Барча вилоятлар (Executive Summary)":
+    if picked != "Барча ҳудудлар":
         if st.session_state.selected_region != picked:
             st.session_state.selected_region = picked
             st.rerun()
@@ -1113,7 +1175,7 @@ with st.sidebar:
             st.rerun()
 
     if st.session_state.selected_region:
-        if st.button("← Executive Summary'га қайтиш", width='stretch'):
+        if st.button("← Бош саҳифага қайтиш", width='stretch'):
             st.session_state.selected_region = None
             st.rerun()
 
@@ -1121,10 +1183,10 @@ with st.sidebar:
     st.markdown(
         """**📘 Лойиҳа ҳақида**
 
-Бу прототип — Ўзбекистон вилоятларининг иқтисодий соғлиғини баҳолайдиган композит индекс (ҲИБКК) учун дашборд.
+Ушбу лойиҳа: Ўзбекистон маъмурий-ҳудудларининг иқтисодий барқарорлигини баҳоловчи композит кўрсаткич (ҲИБКК) дашборди.
 
-- **7 таҳлил блоки** — концепциядан
-- **14 вилоят + 200+ туман** drill-down
+- **7 таҳлил блоки** концепцияга мос
+- **14 ҳудуд + 200+ туман** drill-down
 - **Эрта огоҳлантириш тизими** 4 даражали
 
 Маълумот синтетик, методология ҳақиқий.
