@@ -47,10 +47,10 @@ PALETTE = {
     "dt": "#1E293B", "mt": "#475569", "lt": "#94A3B8",
 }
 SIGNAL = {
-    1: {"bg": "#E6F1FB", "fg": "#0C447C", "main": "#185FA5", "label": "Яхши"},
-    2: {"bg": "#E1F5EE", "fg": "#085041", "main": "#16A34A", "label": "Ўртача"},
-    3: {"bg": "#FAEEDA", "fg": "#633806", "main": "#C8922A", "label": "Хавфли"},
-    4: {"bg": "#FAECE7", "fg": "#712B13", "main": "#DC2626", "label": "Жуда ёмон"},
+    1: {"bg": "#DCFCE7", "fg": "#14532D", "main": "#16A34A", "label": "Яхши"},        # green
+    2: {"bg": "#F0FDD4", "fg": "#365314", "main": "#84CC16", "label": "Ўртача"},      # yellow-green
+    3: {"bg": "#FFEDD5", "fg": "#7C2D12", "main": "#EA580C", "label": "Хавфли"},      # orange
+    4: {"bg": "#FEE2E2", "fg": "#7F1D1D", "main": "#DC2626", "label": "Жуда ёмон"},   # red
 }
 LEVEL = {
     4: {"label": "4-даража · Кризис",        "color": PALETTE["red"]},
@@ -456,6 +456,35 @@ def make_plotly_choropleth(regions_df: pd.DataFrame, geojson: dict, height: int 
             "<extra></extra>"
         ),
     )
+
+    # Overlay scatter markers on each region centroid so geographically tiny
+    # regions (Tashkent City especially) are still visible on the map.
+    fid_to_geom = {f["id"]: f["geometry"] for f in geojson_clean["features"]}
+    cent_lon, cent_lat, cent_text, cent_color = [], [], [], []
+    for _, row in df.iterrows():
+        geom = fid_to_geom.get(row["geo_id"])
+        if not geom:
+            continue
+        pts = []
+        for poly in geom["coordinates"]:
+            if poly and poly[0]:
+                pts.extend(poly[0])
+        if not pts:
+            continue
+        cent_lon.append(sum(p[0] for p in pts) / len(pts))
+        cent_lat.append(sum(p[1] for p in pts) / len(pts))
+        cent_text.append(f"{row['name_uz']} · {row['misp']:.1f}")
+        cent_color.append(SIGNAL[int(row["signal"])]["main"])
+    fig.add_trace(go.Scattermap(
+        lat=cent_lat, lon=cent_lon,
+        mode="markers",
+        marker=dict(size=11, color=cent_color, opacity=0.95),
+        text=cent_text,
+        hovertemplate="<b>%{text}</b><extra></extra>",
+        showlegend=False,
+        name="centroids",
+    ))
+
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
         height=height,
@@ -490,6 +519,17 @@ def make_region_highlight_map(regions_df: pd.DataFrame, geojson: dict,
         lambda n: "selected" if n == selected_region else "other"
     )
 
+    # Tashkent City is geographically tiny (~335 km², single dot at this scale)
+    # so we zoom in / re-center when it's the selected region. Same trick for
+    # other compact regions if they slip through.
+    SMALL_REGIONS = {
+        "Тошкент ш.": {"lat": 41.31, "lon": 69.28, "zoom": 8.5},
+        "Сирдарё":    {"lat": 40.50, "lon": 68.75, "zoom": 7.0},
+        "Хоразм":     {"lat": 41.55, "lon": 60.62, "zoom": 7.2},
+    }
+    cam = SMALL_REGIONS.get(selected_region,
+                             {"lat": 41.7, "lon": 64.5, "zoom": 4.6})
+
     # MapLibre choropleth_map - same renderer as the main map for visual
     # consistency, and it rendered cleanly when we tested it earlier.
     fig = px.choropleth_map(
@@ -501,8 +541,8 @@ def make_region_highlight_map(regions_df: pd.DataFrame, geojson: dict,
         color_discrete_map={"selected": sel_color, "other": "#cbd5e1"},
         hover_name="name_uz",
         custom_data=["name_uz", "misp", "rank", "signal_label"],
-        center={"lat": 41.7, "lon": 64.5},
-        zoom=4.6,
+        center={"lat": cam["lat"], "lon": cam["lon"]},
+        zoom=cam["zoom"],
         map_style="white-bg",
         opacity=0.85,
     )
@@ -807,7 +847,7 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
                         st.rerun()
 
         st.caption(
-            "🟦 ≥70 Яхши  ·  🟩 50-69 Ўртача  ·  🟧 30-49 Хавфли  ·  🟥 <30 Жуда ёмон"
+            "🟩 ≥70 Яхши  ·  🟨 50-69 Ўртача  ·  🟧 30-49 Хавфли  ·  🟥 <30 Жуда ёмон"
         )
 
         # Region quick-pick grid - 14 buttons under the map. Acts as a "click
@@ -885,10 +925,21 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         return ""
 
     score_cols = ["ҲИБКК", "I", "II", "III", "IV", "V", "VI", "VII"]
+
+    def _delta_bg(val):
+        if pd.isna(val):
+            return ""
+        if val > 0:
+            return f"background-color: {SIGNAL[1]['bg']}; color: {SIGNAL[1]['fg']}; font-weight: 600;"
+        if val < 0:
+            return f"background-color: {SIGNAL[4]['bg']}; color: {SIGNAL[4]['fg']}; font-weight: 600;"
+        return ""
+
     styled = (
         table_df.style
         .map(_signal_bg, subset=score_cols)
         .map(_signal_label_bg, subset=["Сигнал"])
+        .map(_delta_bg, subset=["Δ чорак"])
         .format({"ҲИБКК": "{:.1f}", "Δ чорак": "{:+.2f}",
                  **{c: "{:.0f}" for c in ["I","II","III","IV","V","VI","VII"]}})
     )
