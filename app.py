@@ -472,14 +472,23 @@ def make_plotly_choropleth(regions_df: pd.DataFrame, geojson: dict, height: int 
     # Drop a labelled dot in its signal color so the user can see it clearly.
     tash_row = df[df["name_uz"] == "Тошкент ш."]
     if not tash_row.empty:
-        tash_signal = int(tash_row.iloc[0]["signal"])
+        tr = tash_row.iloc[0]
+        tash_signal = int(tr["signal"])
         fig.add_trace(go.Scattermap(
             lat=[41.31], lon=[69.28],
             mode="markers",
-            marker=dict(size=18, color=SIGNAL[tash_signal]["main"],
-                        opacity=0.95),
-            text=[f"Тошкент ш. · {tash_row.iloc[0]['misp']:.1f}"],
-            hovertemplate="<b>%{text}</b><extra></extra>",
+            marker=dict(size=18, color=SIGNAL[tash_signal]["main"], opacity=0.95),
+            customdata=[[tr["name_uz"], tr["misp"], tr["rank"],
+                         tr["signal_label"], tr["delta_q"], tr["population_k"]]],
+            hovertemplate=(
+                "<b>%{customdata[0]}</b><br>"
+                "ҲИБКК балл: %{customdata[1]:.1f}<br>"
+                "Ўрин: %{customdata[2]}<br>"
+                "Сигнал: %{customdata[3]}<br>"
+                "Чорак ўзг.: %{customdata[4]:+.1f}<br>"
+                "Аҳоли: %{customdata[5]:,.0f} минг"
+                "<extra></extra>"
+            ),
             showlegend=False,
             name="tash_marker",
         ))
@@ -1004,8 +1013,7 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
                         st.rerun()
 
         st.caption(
-            "🟩 ≥70 Яхши  ·  🟨 50-69 Ўртача  ·  🟧 30-49 Хавфли  ·  🟥 <30 Жуда ёмон  ·  "
-            "Drill-down: чап томондаги сайдбардан вилоят танланг."
+            "🟩 ≥70 Яхши  ·  🟨 50-69 Ўртача  ·  🟧 30-49 Хавфли  ·  🟥 <30 Жуда ёмон"
         )
 
     with warn_col:
@@ -1034,7 +1042,7 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
 
     # ── Ranking table ───────────────────────────────────────────────────────
     st.markdown(
-        f'<div class="panel-title">Ҳудудлар кўрсаткичлари <span class="badge">{st.session_state.get("filter_quarter","III чорак")} {st.session_state.get("filter_year","2025")}</span></div>',
+        f'<div class="panel-title">Ҳудудлар кесимида кўрсаткичлар <span class="badge">{st.session_state.get("filter_quarter","III чорак")} {st.session_state.get("filter_year","2025")}</span></div>',
         unsafe_allow_html=True,
     )
     SHORT_BLOCK_HDR = {
