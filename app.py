@@ -953,7 +953,7 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
     map_col, warn_col = st.columns([2, 1])
     with map_col:
         st.markdown(
-            '<div class="panel-title">Минтақавий скоркард харитаси <span class="badge">14 вилоят</span></div>',
+            '<div class="panel-title">Минтақавий скоркард харитаси <span class="badge">14 ҳудуд</span></div>',
             unsafe_allow_html=True,
         )
 
@@ -1217,11 +1217,11 @@ def render_region_profile(region_name: str, d: dict):
         f"""<div class="hero">
               <div>
                 <div style="font-size:11px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:0.6px">
-                  Вилоят профили · {r['type']}
+                  Ҳудуд профили · {r['type']}
                 </div>
                 <div class="name">{r['name_uz']}</div>
                 <div class="meta">{r['sectors']} · Аҳоли: {r['population_k']:,.0f} минг · {r['area_km2']:,} км²</div>
-                <div class="rank-pill">14 вилоятдан {r['rank']}-ўрин · {sig['label']}</div>
+                <div class="rank-pill">14 ҳудуддан {r['rank']}-ўрин · {sig['label']}</div>
               </div>
               <div>
                 <div class="score-lbl">ҲИБКК балл</div>
@@ -1364,7 +1364,7 @@ def render_region_profile(region_name: str, d: dict):
     # ── Similar regions + active warnings ──────────────────────────────────
     sim_col, warn_col = st.columns([1, 1])
     with sim_col:
-        st.markdown('<div class="panel-title">Ўхшаш вилоятлар (ҲИБКК яқинлиги)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel-title">Ўхшаш ҳудудлар (ҲИБКК яқинлиги)</div>', unsafe_allow_html=True)
         others = regions_df[regions_df["name_uz"] != region_name].copy()
         others["dist"] = (others["misp"] - r["misp"]).abs()
         for _, sr in others.nsmallest(4, "dist").iterrows():
@@ -1384,7 +1384,7 @@ def render_region_profile(region_name: str, d: dict):
             )
     with warn_col:
         st.markdown(
-            f'<div class="panel-title">Ушбу вилоят бўйича огоҳлантиришлар '
+            f'<div class="panel-title">Ушбу ҳудуд бўйича огоҳлантиришлар '
             f'<span class="badge" style="background:#FCEBEB;color:#791F1F">{len(warn_sub)} та</span></div>',
             unsafe_allow_html=True,
         )
@@ -1500,7 +1500,7 @@ st.markdown(
     f"""<div style="margin-top:30px;padding:12px 4px;border-top:1px solid #e2e8f0;
                    display:flex;justify-content:space-between;font-size:10px;color:#94A3B8">
           <div>Ҳудудий иқтисодий барқарорлик композит кўрсаткичи (ҲИБКК) дашборди · Plotly + Streamlit · GeoJSON: akbartus/GeoJSON-Uzbekistan (OSM, GPL-3.0)</div>
-          <div>Маълумот: синтетик демо · {len(data['regions'])} вилоят · {len(data['districts'])} туман</div>
+          <div>Маълумот: синтетик демо · {len(data['regions'])} ҳудуд · {len(data['districts'])} туман</div>
         </div>""",
     unsafe_allow_html=True,
 )
