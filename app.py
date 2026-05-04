@@ -611,15 +611,23 @@ def make_grid_fallback(regions_df: pd.DataFrame):
     return fig
 
 
-def make_radar(values: list[float], values_prev: list[float] | None = None, height: int = 320):
+def make_radar(values: list[float], values_prev: list[float] | None = None,
+               values_national: list[float] | None = None, height: int = 320):
     fig = go.Figure()
+    if values_national is not None:
+        fig.add_trace(go.Scatterpolar(
+            r=values_national + [values_national[0]],
+            theta=BLOCK_SHORT + [BLOCK_SHORT[0]],
+            name="Миллий ўртама", mode="lines",
+            line=dict(color="#94A3B8", width=1, dash="dot"),
+        ))
     if values_prev is not None:
         fig.add_trace(go.Scatterpolar(
             r=values_prev + [values_prev[0]],
             theta=BLOCK_SHORT + [BLOCK_SHORT[0]],
             name="Олдинги чорак", mode="lines",
-            line=dict(color="#94A3B8", width=1, dash="dash"),
-            fill="toself", fillcolor="rgba(148,163,184,0.10)",
+            line=dict(color=PALETTE["navy"], width=1, dash="dash"),
+            fill="toself", fillcolor="rgba(27,58,107,0.08)",
         ))
     fig.add_trace(go.Scatterpolar(
         r=values + [values[0]],
@@ -635,7 +643,7 @@ def make_radar(values: list[float], values_prev: list[float] | None = None, heig
             angularaxis=dict(tickfont=dict(size=10), gridcolor="rgba(0,0,0,0.06)"),
             bgcolor="rgba(0,0,0,0)",
         ),
-        showlegend=values_prev is not None,
+        showlegend=values_prev is not None or values_national is not None,
         legend=dict(orientation="h", y=-0.05, font=dict(size=10)),
         margin=dict(l=20, r=20, t=10, b=20),
         height=height,
@@ -1057,6 +1065,10 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
     table_df = regions_df[["rank", "name_uz", "misp", "delta_q", "signal_label",
                            "block_I", "block_II", "block_III", "block_IV",
                            "block_V", "block_VI", "block_VII", "population_k"]].copy()
+    # Build per-region 6-month spark series from panel data
+    last6 = panel_df.sort_values("month").groupby("name_uz").tail(6)
+    spark_map = last6.groupby("name_uz")["misp"].apply(list).to_dict()
+    table_df["spark"] = table_df["name_uz"].map(spark_map)
     # Format population as "X,Y млн" string (Uzbek decimal separator: comma)
     table_df["population_k"] = table_df["population_k"].apply(
         lambda kp: f"{kp/1000:.1f}".replace(".", ",") + " млн"
@@ -1065,7 +1077,7 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
     table_df.columns = ["#", "Ҳудуд", "ҲИБКК", "Δ чорак", "Сигнал",
                          SHORT_BLOCK_HDR["I"], SHORT_BLOCK_HDR["II"], SHORT_BLOCK_HDR["III"],
                          SHORT_BLOCK_HDR["IV"], SHORT_BLOCK_HDR["V"], SHORT_BLOCK_HDR["VI"],
-                         SHORT_BLOCK_HDR["VII"], POP_HDR]
+                         SHORT_BLOCK_HDR["VII"], POP_HDR, "Тренд (6 ой)"]
     block_help = {SHORT_BLOCK_HDR[k]: f"{k}. {b[1]} (тарози: {b[2]*100:.0f}%)"
                   for k, b in zip(SHORT_BLOCK_HDR.keys(), BLOCKS)}
 
@@ -1110,6 +1122,10 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         "ҲИБКК":  st.column_config.NumberColumn("ҲИБКК",  help="Композит ҲИБКК балл (0-100)"),
         "Δ чорак": st.column_config.NumberColumn("Δ чорак", help="Олдинги чоракка нисбатан ўзгариш"),
         POP_HDR:   st.column_config.TextColumn(POP_HDR,    help="Ҳудуд аҳолиси (миллион киши)"),
+        "Тренд (6 ой)": st.column_config.LineChartColumn(
+            "Тренд (6 ой)", y_min=0, y_max=100, width="small",
+            help="ҲИБКК тренди охирги 6 ой бўйича",
+        ),
     }
     for k in ["I","II","III","IV","V","VI","VII"]:
         column_cfg[SHORT_BLOCK_HDR[k]] = st.column_config.NumberColumn(
@@ -1153,6 +1169,111 @@ def render_executive_summary(d: dict, geojson, geo_key, geo_names):
         "💡 Қалин кўк чизиқ - миллий композит ҲИБКК. Қолган 7 та чизиқ - блок-кўрсаткичлар. "
         "Ўнгдаги легендадан исталган блокни босиб ёқиш/ўчириш мумкин."
     )
+
+    # ── Comparison: 2 regions side-by-side ─────────────────────────────────
+    st.markdown(
+        '<div class="panel-title">⚖️ Ҳудудларни таққослаш '
+        '<span class="badge">2 та ҳудудни танланг</span></div>',
+        unsafe_allow_html=True,
+    )
+    region_names = sorted(regions_df["name_uz"].tolist())
+    cmp_a_col, cmp_b_col = st.columns(2)
+    with cmp_a_col:
+        cmp_a = st.selectbox("Биринчи ҳудуд", region_names, index=region_names.index("Самарқанд"), key="cmp_a")
+    with cmp_b_col:
+        cmp_b = st.selectbox("Иккинчи ҳудуд", region_names, index=region_names.index("Андижон"), key="cmp_b")
+
+    ra = regions_df[regions_df["name_uz"] == cmp_a].iloc[0]
+    rb = regions_df[regions_df["name_uz"] == cmp_b].iloc[0]
+    sa, sb = SIGNAL[ra["signal"]], SIGNAL[rb["signal"]]
+
+    def _cmp_card(row, sig):
+        rows = [
+            ("ҲИБКК балл", f"{row['misp']:.1f}"),
+            ("Ўрин (14 дан)", f"{row['rank']}"),
+            ("Сигнал", sig["label"]),
+            ("Аҳоли (млн)", f"{row['population_k']/1000:.1f}".replace(".", ",")),
+            ("Майдони (км²)", f"{row['area_km2']:,}".replace(",", " ")),
+            ("Δ чорак", f"{row['delta_q']:+.2f}"),
+            ("Тури", row["type"]),
+        ]
+        rows_html = "".join(
+            f'<div style="display:flex;justify-content:space-between;padding:6px 0;'
+            f'border-bottom:0.5px solid #e2e8f0;font-size:11px">'
+            f'<span style="color:#475569">{lbl}</span>'
+            f'<span style="font-weight:600;color:#1E293B">{val}</span></div>'
+            for lbl, val in rows
+        )
+        return (
+            f'<div style="background:{sig["bg"]};border:1px solid {sig["main"]};'
+            f'border-radius:8px;padding:14px;height:100%">'
+            f'<div style="font-size:18px;font-weight:600;color:{sig["fg"]}">{row["name_uz"]}</div>'
+            f'<div style="font-size:11px;color:#475569;margin-bottom:8px">{row["sectors"]}</div>'
+            f'{rows_html}</div>'
+        )
+
+    a_col, mid_col, b_col_disp = st.columns([5, 1, 5])
+    with a_col:
+        st.markdown(_cmp_card(ra, sa), unsafe_allow_html=True)
+    with mid_col:
+        st.markdown(
+            f'<div style="display:flex;align-items:center;justify-content:center;height:100%;'
+            f'font-size:32px;font-weight:600;color:#94A3B8;padding-top:60px">VS</div>',
+            unsafe_allow_html=True,
+        )
+    with b_col_disp:
+        st.markdown(_cmp_card(rb, sb), unsafe_allow_html=True)
+
+    # Comparative radar (both regions on one polar)
+    block_a = [ra[f"block_{b[0]}"] for b in BLOCKS]
+    block_b = [rb[f"block_{b[0]}"] for b in BLOCKS]
+    cmp_fig = go.Figure()
+    cmp_fig.add_trace(go.Scatterpolar(
+        r=block_a + [block_a[0]], theta=BLOCK_SHORT + [BLOCK_SHORT[0]],
+        name=cmp_a, mode="lines+markers",
+        line=dict(color=sa["main"], width=2),
+        marker=dict(size=6, color=sa["main"]),
+        fill="toself", fillcolor=f"rgba{tuple(int(sa['main'][i:i+2],16) for i in (1,3,5)) + (0.18,)}",
+    ))
+    cmp_fig.add_trace(go.Scatterpolar(
+        r=block_b + [block_b[0]], theta=BLOCK_SHORT + [BLOCK_SHORT[0]],
+        name=cmp_b, mode="lines+markers",
+        line=dict(color=sb["main"], width=2),
+        marker=dict(size=6, color=sb["main"]),
+        fill="toself", fillcolor=f"rgba{tuple(int(sb['main'][i:i+2],16) for i in (1,3,5)) + (0.18,)}",
+    ))
+    cmp_fig.update_layout(
+        polar=dict(
+            radialaxis=dict(range=[0, 100], tickfont=dict(size=9), gridcolor="rgba(0,0,0,0.06)"),
+            angularaxis=dict(tickfont=dict(size=10), gridcolor="rgba(0,0,0,0.06)"),
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        showlegend=True,
+        legend=dict(orientation="h", y=-0.05, font=dict(size=11)),
+        margin=dict(l=20, r=20, t=10, b=20),
+        height=360,
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(cmp_fig, width='stretch', key=f"cmp_radar_{cmp_a}_{cmp_b}")
+
+    # Auto-analysis text
+    diff = ra["misp"] - rb["misp"]
+    diff_block = max(BLOCKS, key=lambda b: abs(ra[f"block_{b[0]}"] - rb[f"block_{b[0]}"]))
+    diff_block_val = ra[f"block_{diff_block[0]}"] - rb[f"block_{diff_block[0]}"]
+    leader = cmp_a if diff > 0 else cmp_b
+    sign = "+" if abs(diff) > 0 else ""
+    st.markdown(
+        f'<div style="margin-top:12px;padding:10px 12px;background:#f8fafc;border-radius:6px;'
+        f'font-size:11px;color:#475569;border-left:3px solid {PALETTE["teal"]}">'
+        f'<b style="color:#1E293B">📊 Авто-таҳлил:</b> '
+        f'{leader} ҳудуди ҲИБКК бўйича {sign}{abs(diff):.1f} пунктга устун. '
+        f'Энг катта тафовут <b>{diff_block[0]}. {diff_block[1]}</b> блокида '
+        f'({sign}{abs(diff_block_val):.1f} пункт {leader} фойдасига). '
+        f'Аҳоли тафовути: {abs(ra["population_k"]-rb["population_k"]):,.0f} минг киши.'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
 
     # ── Methodology footer ──────────────────────────────────────────────────
     with st.expander("📘 Методология"):
@@ -1265,7 +1386,13 @@ def render_region_profile(region_name: str, d: dict):
         # month in the panel as a proxy.
         prev_month = panel_sub.iloc[-4]
         block_prev = [prev_month[f"block_{b[0]}"] for b in BLOCKS]
-        st.plotly_chart(make_radar(block_vals, block_prev), width='stretch')
+        # Population-weighted national average for each block - third trace.
+        pop_w = regions_df["population_k"]
+        block_natl = [
+            float((regions_df[f"block_{b[0]}"] * pop_w).sum() / pop_w.sum())
+            for b in BLOCKS
+        ]
+        st.plotly_chart(make_radar(block_vals, block_prev, block_natl), width='stretch')
     with trd_col:
         st.markdown(
             '<div class="panel-title">12-ойлик ҲИБКК тренди <span class="badge">шкала зоналари бўйича</span></div>',
@@ -1403,6 +1530,54 @@ def render_region_profile(region_name: str, d: dict):
                         </div>""",
                     unsafe_allow_html=True,
                 )
+
+    # ── Barriers + Opportunities (auto-derived from block scores) ─────────
+    bar_col, opp_col = st.columns(2)
+    sorted_blocks = sorted(BLOCKS, key=lambda b: r[f"block_{b[0]}"])
+    weakest = sorted_blocks[:3]
+    strongest = sorted_blocks[-3:][::-1]
+    with bar_col:
+        st.markdown(
+            '<div class="panel-title">⚠️ Ўсиш тўсиқлари '
+            '<span class="badge" style="background:#FCEBEB;color:#791F1F">энг заиф 3 блок</span></div>',
+            unsafe_allow_html=True,
+        )
+        for b in weakest:
+            score = r[f"block_{b[0]}"]
+            st.markdown(
+                f"""<div class="signal" style="border-left:3px solid {PALETTE['red']}">
+                      <div style="width:24px;height:24px;border-radius:50%;background:#FCEBEB;
+                                  color:{PALETTE['red']};display:flex;align-items:center;justify-content:center;
+                                  font-size:12px;font-weight:700">!</div>
+                      <div class="body">
+                        <div class="ind">{b[0]}. {b[1]}</div>
+                        <div class="det">Жорий балл: {score:.1f} · миллий ўртачадан паст. Аралашув талаб этилади.</div>
+                      </div>
+                      <div style="font-size:14px;font-weight:600;color:{PALETTE['red']}">{score:.1f}</div>
+                    </div>""",
+                unsafe_allow_html=True,
+            )
+    with opp_col:
+        st.markdown(
+            '<div class="panel-title">🚀 Имкониятлар '
+            '<span class="badge" style="background:#DCFCE7;color:#085041">энг кучли 3 блок</span></div>',
+            unsafe_allow_html=True,
+        )
+        for b in strongest:
+            score = r[f"block_{b[0]}"]
+            st.markdown(
+                f"""<div class="signal" style="border-left:3px solid {PALETTE['green']}">
+                      <div style="width:24px;height:24px;border-radius:50%;background:#DCFCE7;
+                                  color:{PALETTE['green']};display:flex;align-items:center;justify-content:center;
+                                  font-size:12px;font-weight:700">↑</div>
+                      <div class="body">
+                        <div class="ind">{b[0]}. {b[1]}</div>
+                        <div class="det">Жорий балл: {score:.1f} · юқори потенциал. Кенгайтириш ва бошқа ҳудудларга кўпайтириш.</div>
+                      </div>
+                      <div style="font-size:14px;font-weight:600;color:{PALETTE['green']}">{score:.1f}</div>
+                    </div>""",
+                unsafe_allow_html=True,
+            )
 
     # ── Auto-recommendations (rule-based) ──────────────────────────────────
     st.markdown('<div class="panel-title">Сиёсий тавсиялар (авто-генерация)</div>', unsafe_allow_html=True)
