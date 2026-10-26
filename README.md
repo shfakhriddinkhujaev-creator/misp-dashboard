@@ -54,6 +54,7 @@ misp-dashboard/
 ├── data.py                          # Генератор синтетических данных + методология
 ├── uzbekistan_regional.geojson      # Кэш границ областей (akbartus/OSM)
 ├── requirements.txt
+├── private_data/                    # Локальные данные (игнорируются git, не попадают на GitHub)
 ├── .streamlit/
 │   └── config.toml                  # Тема (палитра из мокапов)
 └── README.md
